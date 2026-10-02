@@ -7,9 +7,10 @@
 import { Router } from "express";
 import { userIdOf } from "../lib/requestUser.ts";
 import { devUser } from "../middleware/devUser.ts";
-import { EmbeddingError } from "../services/embeddings.ts";
+import { AiServiceError } from "../services/aiRetry.ts";
 import { retrieveChunks } from "../services/retrieval.ts";
-import { embeddingErrorResponse, parseSearchRequest } from "./search.validation.ts";
+import { aiErrorResponse } from "./aiErrors.ts";
+import { parseSearchRequest } from "./search.validation.ts";
 
 export const searchRouter = Router();
 
@@ -34,9 +35,9 @@ searchRouter.post("/", async (req, res) => {
       timings,
     });
   } catch (error) {
-    if (!(error instanceof EmbeddingError)) throw error; // → errorHandler, 500
+    if (!(error instanceof AiServiceError)) throw error; // → errorHandler, 500
 
-    const response = embeddingErrorResponse(error);
+    const response = aiErrorResponse(error, "Search");
     if (response.log) console.error(`[search] ${error.code}: ${error.message}`, error.cause ?? "");
     if (response.retryAfterSeconds) res.set("Retry-After", String(response.retryAfterSeconds));
     res.status(response.status).json({ error: response.message });

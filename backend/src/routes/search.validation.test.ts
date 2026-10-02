@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { EmbeddingError, type EmbeddingErrorCode } from "../services/embeddings.ts";
 import {
   DEFAULT_TOP_K,
-  embeddingErrorResponse,
   MAX_QUESTION_CHARS,
   MAX_TOP_K,
   parseSearchRequest,
@@ -58,41 +56,6 @@ describe("parseSearchRequest", () => {
   it("rejects a body that isn't a JSON object (no Content-Type, array, string)", () => {
     for (const body of [undefined, null, [], "What is RAG?"]) {
       assert.match(rejected(body), /Send a JSON object/);
-    }
-  });
-});
-
-describe("embeddingErrorResponse", () => {
-  const responseFor = (code: EmbeddingErrorCode) => embeddingErrorResponse(new EmbeddingError(code, "internal message"));
-
-  it("rate limit → 503 with Retry-After, not logged (expected under load)", () => {
-    assert.deepEqual(responseFor("rate_limited"), {
-      status: 503,
-      message: "Search is busy right now. Try again in a moment.",
-      retryAfterSeconds: 30,
-      log: false,
-    });
-  });
-
-  it("quota exhausted and unavailable → 503, logged", () => {
-    for (const code of ["quota_exhausted", "unavailable"] as const) {
-      const response = responseFor(code);
-      assert.equal(response.status, 503);
-      assert.equal(response.retryAfterSeconds, undefined);
-      assert.equal(response.log, true);
-    }
-  });
-
-  it("rejected / bad response → 502, logged", () => {
-    for (const code of ["rejected", "bad_response", "too_large"] as const) {
-      assert.equal(responseFor(code).status, 502);
-      assert.equal(responseFor(code).log, true);
-    }
-  });
-
-  it("never passes the internal error message to the client", () => {
-    for (const code of ["rate_limited", "quota_exhausted", "unavailable", "rejected", "bad_response", "too_large"] as const) {
-      assert.doesNotMatch(responseFor(code).message, /internal message/);
     }
   });
 });

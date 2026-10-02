@@ -6,6 +6,7 @@ import { env } from "./config/env.ts";
 import { errorHandler, notFound } from "./middleware/errorHandler.ts";
 import { documentsRouter } from "./routes/documents.ts";
 import { healthRouter } from "./routes/health.ts";
+import { historyRouter, queryRouter } from "./routes/query.ts";
 import { searchRouter } from "./routes/search.ts";
 
 export function createApp() {
@@ -17,6 +18,8 @@ export function createApp() {
   app.use("/api/health", healthRouter);
   app.use("/api/documents", documentsRouter);
   app.use("/api/search", searchRouter);
+  app.use("/api/query", queryRouter);
+  app.use("/api/queries", historyRouter);
 
   // Must come after all routes.
   app.use(notFound);
