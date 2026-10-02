@@ -4,6 +4,7 @@ import cors from "cors";
 import express from "express";
 import { env } from "./config/env.ts";
 import { errorHandler, notFound } from "./middleware/errorHandler.ts";
+import { documentsRouter } from "./routes/documents.ts";
 import { healthRouter } from "./routes/health.ts";
 
 export function createApp() {
@@ -13,6 +14,7 @@ export function createApp() {
   app.use(express.json({ limit: "1mb" }));
 
   app.use("/api/health", healthRouter);
+  app.use("/api/documents", documentsRouter);
 
   // Must come after all routes.
   app.use(notFound);
