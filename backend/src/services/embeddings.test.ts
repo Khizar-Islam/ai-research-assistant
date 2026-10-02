@@ -9,7 +9,9 @@ import {
   formatDocumentChunk,
   formatQuery,
   inBatches,
+  DOCUMENT_BATCH_SIZE,
   MAX_CHUNKS_PER_DOCUMENT,
+  MAX_ITEMS_PER_REQUEST,
   titleFromFilename,
   type EmbedBatch,
 } from "./embeddings.ts";
@@ -74,13 +76,15 @@ describe("inBatches", () => {
 });
 
 describe("embedDocumentChunks", () => {
-  it("sends formatted chunks in batches of 100 and returns vectors in order", async () => {
+  it("sends formatted chunks in batches of 90 and returns vectors in order", async () => {
+    // 90, not the API's 100: leaves free-tier headroom for questions during big uploads.
+    assert.ok(DOCUMENT_BATCH_SIZE <= MAX_ITEMS_PER_REQUEST);
     const api = fakeApi();
     const vectors = await createEmbedder({ embedBatch: api.embedBatch }).embedDocumentChunks(chunks(250), "Doc");
 
-    assert.deepEqual(api.calls.map((c) => c.length), [100, 100, 50]);
+    assert.deepEqual(api.calls.map((c) => c.length), [90, 90, 70]);
     assert.equal(api.calls[0]![0], "title: Doc | text: chunk 0");
-    assert.equal(api.calls[2]![49], "title: Doc | text: chunk 249");
+    assert.equal(api.calls[2]![69], "title: Doc | text: chunk 249");
     assert.deepEqual(vectors.map((v) => v[0]), Array.from({ length: 250 }, (_, i) => i));
   });
 
@@ -89,6 +93,7 @@ describe("embedDocumentChunks", () => {
     const embedder = createEmbedder({ embedBatch: api.embedBatch });
     await assert.rejects(embedder.embedDocumentChunks(chunks(MAX_CHUNKS_PER_DOCUMENT + 1), "Doc"), {
       name: "EmbeddingError",
+      code: "too_large",
       message: "Document is too large to index (1,001 chunks; the limit is 1,000)",
     });
     assert.equal(api.calls.length, 0);
@@ -105,6 +110,7 @@ describe("embedDocumentChunks", () => {
     for (const response of badResponses) {
       await assert.rejects(respond(response).embedDocumentChunks(chunks(2), "Doc"), {
         name: "EmbeddingError",
+        code: "bad_response",
         message: "The embedding service returned an unexpected response",
       });
     }
@@ -133,7 +139,7 @@ describe("retries", () => {
     const time = fakeTime();
     await assert.rejects(
       createEmbedder({ embedBatch: api.embedBatch, ...time }).embedDocumentChunks(chunks(1), "Doc"),
-      { name: "EmbeddingError", message: "Embedding quota exceeded. Try again later." },
+      { name: "EmbeddingError", code: "quota_exhausted", message: "Embedding quota exceeded. Try again later." },
     );
     assert.deepEqual(time.waits, []);
   });
@@ -154,6 +160,7 @@ describe("retries", () => {
         .embedDocumentChunks(chunks(1), "Doc")
         .catch((e: unknown) => e);
       assert.ok(error instanceof EmbeddingError);
+      assert.equal(error.code, "rejected");
       assert.equal(error.message, "The embedding service rejected the request");
       assert.equal(error.cause, original, "original error kept for the server log");
       assert.equal(api.calls.length, 1);
@@ -164,13 +171,13 @@ describe("retries", () => {
     const api = fakeApi(() => apiError(503));
     await assert.rejects(
       createEmbedder({ embedBatch: api.embedBatch, ...fakeTime() }).embedDocumentChunks(chunks(1), "Doc"),
-      { message: "Embedding service is unavailable. Try again later." },
+      { code: "unavailable", message: "Embedding service is unavailable. Try again later." },
     );
     assert.equal(api.calls.length, 6);
   });
 
   it("keeps going across batches when every batch is rate-limited once (free tier)", async () => {
-    // 1,000 chunks = 10 batches; each one hits the per-minute limit before succeeding.
+    // 1,000 chunks = 12 batches of up to 90; each hits the per-minute limit before succeeding.
     let lastBatch = 0;
     const api = fakeApi((call) => {
       if (call % 2 === 1) return rateLimited("45s");
@@ -180,21 +187,21 @@ describe("retries", () => {
     const time = fakeTime();
     const vectors = await createEmbedder({ embedBatch: api.embedBatch, ...time }).embedDocumentChunks(chunks(1000), "Doc");
     assert.equal(vectors.length, 1000);
-    assert.equal(lastBatch, 10);
-    assert.equal(time.now(), 10 * 45_000); // 7.5 min of waiting, within the 20 min budget
+    assert.equal(lastBatch, 12);
+    assert.equal(time.now(), 12 * 45_000); // 9 min of waiting, within the 20 min budget
   });
 
   it("gives up when the total time budget for a document runs out", async () => {
     // Each batch is rate-limited twice (85s each) before succeeding: no single batch comes
-    // near the 6-attempt limit, but 10 batches would need 10 × 170s ≈ 28 min > 20 min.
+    // near the 6-attempt limit, but 12 batches would need 12 × 170s ≈ 34 min > 20 min.
     const api = fakeApi((call) => (call % 3 !== 0 ? rateLimited("85s") : undefined));
     const time = fakeTime();
     await assert.rejects(
       createEmbedder({ embedBatch: api.embedBatch, ...time }).embedDocumentChunks(chunks(1000), "Doc"),
-      { message: "Embedding service is busy (rate limit). Try again in a few minutes." },
+      { code: "rate_limited", message: "Embedding service is busy (rate limit). Try again in a few minutes." },
     );
     const batchesDone = Math.floor(api.calls.length / 3);
-    assert.ok(batchesDone >= 6 && batchesDone < 10, `stopped after ${batchesDone} batches`);
+    assert.ok(batchesDone >= 6 && batchesDone < 12, `stopped after ${batchesDone} batches`);
     assert.ok(time.now() <= 20 * 60_000, `waited ${time.now()} ms, past the budget`);
   });
 });
@@ -213,6 +220,7 @@ describe("embedQuery", () => {
     const api = fakeApi(() => rateLimited("38s"));
     const time = fakeTime();
     await assert.rejects(createEmbedder({ embedBatch: api.embedBatch, ...time }).embedQuery("hi"), {
+      code: "rate_limited",
       message: "Embedding service is busy (rate limit). Try again in a few minutes.",
     });
     assert.deepEqual(time.waits, []);

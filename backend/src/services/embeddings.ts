@@ -12,13 +12,32 @@
 
 export const EMBEDDING_MODEL = "gemini-embedding-2";
 export const EMBEDDING_DIMENSIONS = 768; // must match the vector(768) column
-export const MAX_ITEMS_PER_REQUEST = 100;
-export const MAX_CHUNKS_PER_DOCUMENT = 1_000; // ~10 minutes of free-tier quota
+export const MAX_ITEMS_PER_REQUEST = 100; // the API's hard limit
+// Uploads send 90 per request, not 100: the free tier allows 100 inputs per minute in
+// total, so this leaves ~10 a minute for questions while a big document is processing.
+export const DOCUMENT_BATCH_SIZE = 90;
+export const MAX_CHUNKS_PER_DOCUMENT = 1_000; // ~11 minutes of free-tier quota
+
+// What went wrong, for code to act on (e.g. choosing an HTTP status); `message` is the
+// same thing in words a user can read.
+export type EmbeddingErrorCode =
+  | "too_large" // document over MAX_CHUNKS_PER_DOCUMENT
+  | "rate_limited" // per-minute limit; worth retrying shortly
+  | "quota_exhausted" // daily limit; not worth retrying today
+  | "unavailable" // service errors/timeouts persisted through retries
+  | "rejected" // the API refused the request (bad key, bad input)
+  | "bad_response"; // the API answered with something that isn't valid vectors
 
 // A failure explained in words a user can read (stored in Document.errorMessage).
 // `cause` keeps the original error for the server log.
 export class EmbeddingError extends Error {
   override name = "EmbeddingError";
+  readonly code: EmbeddingErrorCode;
+
+  constructor(code: EmbeddingErrorCode, message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.code = code;
+  }
 }
 
 // ── Prompt formats (from the gemini-embedding-2 docs) ────────────────────────────────
@@ -101,7 +120,7 @@ export function createEmbedder(deps: EmbedderDeps = {}) {
 
         const failure = classify(error);
         if (failure.kind === "fatal") {
-          throw new EmbeddingError("The embedding service rejected the request", { cause: error });
+          throw new EmbeddingError("rejected", "The embedding service rejected the request", { cause: error });
         }
 
         // Wait as long as the server asks. Otherwise: for a rate limit, long enough for a
@@ -112,15 +131,12 @@ export function createEmbedder(deps: EmbedderDeps = {}) {
 
         // Per-minute limits ask for seconds; a much longer wait means the daily quota is gone.
         if (failure.kind === "rate-limit" && waitMs > DAILY_QUOTA_SIGNAL_MS) {
-          throw new EmbeddingError("Embedding quota exceeded. Try again later.", { cause: error });
+          throw new EmbeddingError("quota_exhausted", "Embedding quota exceeded. Try again later.", { cause: error });
         }
         if (attempt >= policy.maxAttempts || waitMs > policy.maxWaitMs || now() + waitMs > deadline) {
-          throw new EmbeddingError(
-            failure.kind === "rate-limit"
-              ? "Embedding service is busy (rate limit). Try again in a few minutes."
-              : "Embedding service is unavailable. Try again later.",
-            { cause: error },
-          );
+          throw failure.kind === "rate-limit"
+            ? new EmbeddingError("rate_limited", "Embedding service is busy (rate limit). Try again in a few minutes.", { cause: error })
+            : new EmbeddingError("unavailable", "Embedding service is unavailable. Try again later.", { cause: error });
         }
         await sleep(waitMs);
       }
@@ -132,6 +148,7 @@ export function createEmbedder(deps: EmbedderDeps = {}) {
     async embedDocumentChunks(chunks: string[], title: string): Promise<number[][]> {
       if (chunks.length > MAX_CHUNKS_PER_DOCUMENT) {
         throw new EmbeddingError(
+          "too_large",
           `Document is too large to index (${chunks.length.toLocaleString("en-US")} chunks; ` +
             `the limit is ${MAX_CHUNKS_PER_DOCUMENT.toLocaleString("en-US")})`,
         );
@@ -140,7 +157,7 @@ export function createEmbedder(deps: EmbedderDeps = {}) {
       const texts = chunks.map((chunk) => formatDocumentChunk(title, chunk));
       const vectors: number[][] = [];
       // Sequential on purpose: parallel requests would only hit the per-minute quota sooner.
-      for (const batch of inBatches(texts, MAX_ITEMS_PER_REQUEST)) {
+      for (const batch of inBatches(texts, DOCUMENT_BATCH_SIZE)) {
         vectors.push(...(await embedWithRetry(batch, DOCUMENT_POLICY, deadline)));
       }
       return vectors;
@@ -171,7 +188,7 @@ function checkVectors(vectors: number[][], expectedCount: number): void {
     vectors.length === expectedCount &&
     vectors.every((v) => v.length === EMBEDDING_DIMENSIONS && v.every(Number.isFinite));
   if (!ok) {
-    throw new EmbeddingError("The embedding service returned an unexpected response", {
+    throw new EmbeddingError("bad_response", "The embedding service returned an unexpected response", {
       cause: new Error(
         `expected ${expectedCount} vectors of ${EMBEDDING_DIMENSIONS}, got ${vectors.length}: ` +
           `[${vectors.slice(0, 3).map((v) => v.length).join(", ")}${vectors.length > 3 ? ", ..." : ""}]`,
