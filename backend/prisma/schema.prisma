@@ -31,8 +31,9 @@ model Document {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   filename  String
   fileType  String // "pdf" | "text" | "url"
-  status    String   @default("processing") // "processing" | "ready" | "failed"
-  createdAt DateTime @default(now())
+  status       String   @default("processing") // "processing" | "ready" | "failed"
+  errorMessage String? // why processing failed (only set when status = "failed")
+  createdAt    DateTime @default(now())
 
   chunks Chunk[]
 }
