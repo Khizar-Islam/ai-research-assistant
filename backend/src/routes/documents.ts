@@ -49,7 +49,7 @@ documentsRouter.post("/upload", receiveUpload, async (req, res) => {
   // response; the client polls GET /api/documents for the status to change.
   res.status(202).json(document);
 
-  void ingestDocument(document.id, file.buffer, check.kind);
+  void ingestDocument(document.id, document.filename, file.buffer, check.kind);
 });
 
 // GET /api/documents — the user's documents, newest first.
