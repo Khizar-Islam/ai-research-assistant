@@ -1,0 +1,2 @@
+# Binary files: never convert line endings inside them (core.autocrlf would corrupt PDFs).
+*.pdf binary
