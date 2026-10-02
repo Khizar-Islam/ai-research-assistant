@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { type CitableSource, markerGroups, processAnswer, SNIPPET_CHARS, snippetOf } from "./citations.ts";
+import { type CitableSource, markAvailability, markerGroups, processAnswer, SNIPPET_CHARS, snippetOf } from "./citations.ts";
 
 const source = (n: number, content = `Content of source ${n}.`): CitableSource => ({
   chunkId: `chunk-${n}`,
@@ -75,6 +75,19 @@ describe("processAnswer", () => {
 
   it("finds marker groups in text", () => {
     assert.deepEqual(markerGroups("a [1] b [2, 3][4] c [x]"), ["[1]", "[2, 3]", "[4]"]);
+  });
+});
+
+describe("markAvailability", () => {
+  it("marks each citation by whether its chunk still exists, keeping everything else", () => {
+    const { citations } = processAnswer("A [1]. B [2]. C [3].", sources);
+    const marked = markAvailability(citations, new Set(["chunk-1", "chunk-3"]));
+    assert.deepEqual(marked.map((c) => [c.marker, c.available]), [[1, true], [2, false], [3, true]]);
+    assert.deepEqual({ ...marked[1], available: undefined }, { ...citations[1], available: undefined });
+  });
+
+  it("handles no citations", () => {
+    assert.deepEqual(markAvailability([], new Set(["chunk-1"])), []);
   });
 });
 

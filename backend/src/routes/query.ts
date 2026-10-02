@@ -9,7 +9,7 @@ import { userIdOf } from "../lib/requestUser.ts";
 import { devUser } from "../middleware/devUser.ts";
 import { AiServiceError } from "../services/aiRetry.ts";
 import { answerer } from "../services/answering.ts";
-import type { Citation } from "../services/citations.ts";
+import { type Citation, markAvailability } from "../services/citations.ts";
 import { aiErrorResponse } from "./aiErrors.ts";
 import { parseHistoryLimit, parseQueryRequest } from "./query.validation.ts";
 
@@ -53,11 +53,26 @@ historyRouter.get("/", async (req, res) => {
     select: { id: true, question: true, answer: true, citations: true, createdAt: true },
   });
 
+  const citationsByRow = rows.map((row) => (Array.isArray(row.citations) ? (row.citations as unknown as Citation[]) : []));
+
+  // Which cited chunks still exist (their document may have been deleted since): one query
+  // for the whole page rather than one per citation. Scoped to the user's own documents.
+  const citedChunkIds = [...new Set(citationsByRow.flat().map((citation) => citation.chunkId))];
+  const existing =
+    citedChunkIds.length === 0
+      ? []
+      : await prisma.chunk.findMany({
+          where: { id: { in: citedChunkIds }, document: { userId: userIdOf(req) } },
+          select: { id: true },
+        });
+  const existingIds = new Set(existing.map((chunk) => chunk.id));
+
   res.json({
-    queries: rows.map((row) => {
-      const citations = Array.isArray(row.citations) ? (row.citations as unknown as Citation[]) : [];
+    queries: rows.map((row, i) => {
+      const citations = citationsByRow[i]!;
       // Not stored: "answered" means the answer cites at least one source (see citations.ts).
-      return { ...row, citations, answered: citations.length > 0 };
+      // It stays true after a cited document is deleted: the answer was grounded when given.
+      return { ...row, citations: markAvailability(citations, existingIds), answered: citations.length > 0 };
     }),
   });
 });

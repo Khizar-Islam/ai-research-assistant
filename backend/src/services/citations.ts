@@ -86,5 +86,14 @@ export function snippetOf(content: string): string {
   return `${(lastSpace > SNIPPET_CHARS * 0.6 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
 }
 
+// A citation as shown in history. Saved answers keep their citations even after the cited
+// document is deleted (the snippet and filename still read fine), but the chunk itself is
+// gone, so the UI can't jump to or highlight it: `available: false` says so.
+export type HistoryCitation = Citation & { available: boolean };
+
+export function markAvailability(citations: Citation[], existingChunkIds: ReadonlySet<string>): HistoryCitation[] {
+  return citations.map((citation) => ({ ...citation, available: existingChunkIds.has(citation.chunkId) }));
+}
+
 // Exported for tests: every marker group in a text.
 export const markerGroups = (text: string) => text.match(MARKER_GROUP) ?? [];
