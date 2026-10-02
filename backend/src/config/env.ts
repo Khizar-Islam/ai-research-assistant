@@ -22,6 +22,16 @@ const EnvSchema = z.object({
     .min(30, "looks too short to be a Gemini API key")
     .regex(/^\S+$/, "must not contain spaces"),
 
+  // Model that writes answers (Step 5). Chosen by a live comparison: same answer quality
+  // as gemini-3.5-flash in testing, ~10x faster (~0.9 s). Gemini models get retired, so
+  // this is config, not code: switch to "gemini-3.5-flash" here if flash-lite is ever
+  // unavailable or struggles with harder questions.
+  GEMINI_CHAT_MODEL: z
+    .string()
+    .trim()
+    .regex(/^gemini-[\w.-]+$/, 'must be a Gemini model id like "gemini-3.5-flash-lite"')
+    .default("gemini-3.5-flash-lite"),
+
   // Comma-separated list of origins allowed to call the API (the Next.js frontend).
   CORS_ORIGIN: z
     .string()

@@ -53,6 +53,7 @@ export function embeddingErrorResponse(error: EmbeddingError): {
       return { status: 503, message: "Search is temporarily unavailable. Try again later.", log: true };
     case "rejected":
     case "bad_response":
+    case "blocked": // generation only; listed so the switch stays exhaustive
     case "too_large": // can't happen for a single question, but keep the switch exhaustive
       return { status: 502, message: "Search failed because of a problem with the embedding service.", log: true };
   }
