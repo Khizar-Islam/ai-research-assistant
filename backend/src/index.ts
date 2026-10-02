@@ -5,7 +5,14 @@ import { failInterruptedDocuments } from "./services/ingest/pipeline.ts";
 
 const app = createApp();
 
-const server = app.listen(env.PORT, () => {
+// Express 5 calls this callback on failure too (e.g. EADDRINUSE when another server already
+// has the port), passing the error. Without the check it would log "listening" and then
+// exit silently with code 0.
+const server = app.listen(env.PORT, (error?: Error) => {
+  if (error) {
+    console.error(`Could not start the API on port ${env.PORT}: ${error.message}`);
+    process.exit(1);
+  }
   console.log(`API listening on http://localhost:${env.PORT} (${env.NODE_ENV})`);
 });
 
