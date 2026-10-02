@@ -1,8 +1,9 @@
 // /api/documents — upload documents, list them, inspect their chunks, delete them.
 // Every query is scoped to req.userId, so a user can only ever see their own documents;
 // someone else's document id gets the same 404 as one that doesn't exist.
-import { Router, type Request } from "express";
+import { Router } from "express";
 import { prisma } from "../lib/prisma.ts";
+import { userIdOf } from "../lib/requestUser.ts";
 import { devUser } from "../middleware/devUser.ts";
 import { checkFileType, receiveUpload } from "../middleware/upload.ts";
 import { estimateTokens } from "../services/ingest/chunk.ts";
@@ -11,11 +12,6 @@ import { ingestDocument } from "../services/ingest/pipeline.ts";
 export const documentsRouter = Router();
 
 documentsRouter.use(devUser); // replaced by real auth in Step 8
-
-function userIdOf(req: Request): string {
-  if (!req.userId) throw new Error("documentsRouter reached without an authenticated user");
-  return req.userId;
-}
 
 // Fields returned for a document everywhere (never the user id).
 const documentFields = {

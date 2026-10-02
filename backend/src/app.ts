@@ -6,6 +6,7 @@ import { env } from "./config/env.ts";
 import { errorHandler, notFound } from "./middleware/errorHandler.ts";
 import { documentsRouter } from "./routes/documents.ts";
 import { healthRouter } from "./routes/health.ts";
+import { searchRouter } from "./routes/search.ts";
 
 export function createApp() {
   const app = express();
@@ -15,6 +16,7 @@ export function createApp() {
 
   app.use("/api/health", healthRouter);
   app.use("/api/documents", documentsRouter);
+  app.use("/api/search", searchRouter);
 
   // Must come after all routes.
   app.use(notFound);
