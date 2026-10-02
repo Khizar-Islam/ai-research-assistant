@@ -15,11 +15,25 @@ describe("cleanPdfPage", () => {
     );
   });
 
-  it("undoes end-of-line hyphenation", () => {
+  it("undoes hyphenation when the joined word appears elsewhere in the document", () => {
     assert.equal(
-      cleanPdfPage("Chunks keep enough surrounding infor-\nmation to stay meaningful on their own when retrieved."),
-      "Chunks keep enough surrounding information to stay meaningful on their own when retrieved.",
+      cleanPdfPage("Chunks keep enough surrounding infor-\nmation to stay useful, and that information is retrieved."),
+      "Chunks keep enough surrounding information to stay useful, and that information is retrieved.",
     );
+  });
+
+  it("keeps a real hyphenated compound that wrapped at the end of a line", () => {
+    // Regression: a real CV produced "softwaredevelopment" here.
+    assert.equal(
+      cleanPdfPage("Wrote documentation, following professional software-\ndevelopment workflows and deadlines."),
+      "Wrote documentation, following professional software-development workflows and deadlines.",
+    );
+  });
+
+  it("uses the vocabulary it is given (the whole document), not just this page", () => {
+    const page = "Retrieved chunks carry infor-\nmation from the source documents into the prompt.";
+    assert.match(cleanPdfPage(page), /infor-mation/); // no evidence on this page alone
+    assert.match(cleanPdfPage(page, new Set(["information"])), / information /);
   });
 
   it("keeps a hyphen when the next line starts with a capital", () => {
@@ -65,7 +79,11 @@ describe("cleanPdfPage", () => {
 describe("joinPdfPages", () => {
   it("continues a sentence that runs across a page break", () => {
     assert.equal(joinPdfPages(["It ends on the", "next page. New paragraph."]), "It ends on the next page. New paragraph.");
-    assert.equal(joinPdfPages(["A hyphen-split infor-", "mation word."]), "A hyphen-split information word.");
+    assert.equal(
+      joinPdfPages(["Page one mentions information and infor-", "mation again."]),
+      "Page one mentions information and information again.",
+    );
+    assert.equal(joinPdfPages(["A cross-page well-", "known compound."]), "A cross-page well-known compound.");
   });
 
   it("starts a new paragraph when the page ended a sentence, and skips empty pages", () => {

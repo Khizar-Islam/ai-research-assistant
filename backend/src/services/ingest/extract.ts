@@ -53,7 +53,13 @@ async function extractPdf(buffer: Buffer): Promise<string> {
   try {
     // pageJoiner "" turns off the default "-- 1 of 3 --" marker after every page.
     const result = await parser.getText({ pageJoiner: "" });
-    return joinPdfPages(result.pages.map((page) => cleanPdfPage(page.text)));
+    // Built from the whole document, so a word split on page 3 can be recognized from
+    // its unsplit use on page 1.
+    const vocabulary = wordsIn(result.pages.map((page) => page.text).join("\n"));
+    return joinPdfPages(
+      result.pages.map((page) => cleanPdfPage(page.text, vocabulary)),
+      vocabulary,
+    );
   } catch (error) {
     if (error instanceof PasswordException) {
       throw new ExtractionError("PDF is password-protected");
@@ -66,7 +72,8 @@ async function extractPdf(buffer: Buffer): Promise<string> {
 
 // PDFs store positioned lines, not paragraphs: a paragraph comes out as several
 // hard-wrapped lines. This rebuilds paragraphs from one page of pdf-parse output.
-export function cleanPdfPage(raw: string): string {
+// `vocabulary` (see joinLines) defaults to this page's own words.
+export function cleanPdfPage(raw: string, vocabulary: Set<string> = wordsIn(raw)): string {
   const lines = raw
     .split("\n")
     // pdf-parse puts \t between items separated by a wide horizontal gap (table cells,
@@ -92,7 +99,7 @@ export function cleanPdfPage(raw: string): string {
       continue;
     }
 
-    current = current ? joinLines(current, line) : line;
+    current = current ? joinLines(current, line, vocabulary) : line;
 
     // Wrapped lines inside a paragraph run close to full width, so a clearly short line
     // is the end of a paragraph, a heading, or a list item: all good places to break.
@@ -110,20 +117,38 @@ export function cleanPdfPage(raw: string): string {
 // Joins cleaned pages. A page that ends mid-sentence (no closing punctuation) continues
 // on the next page, so the two are joined like wrapped lines instead of becoming
 // separate paragraphs; otherwise a chunk could start with half a sentence.
-export function joinPdfPages(pages: string[]): string {
+export function joinPdfPages(pages: string[], vocabulary: Set<string> = wordsIn(pages.join("\n"))): string {
   let text = "";
   for (const page of pages) {
     if (!page) continue;
     if (!text) text = page;
     else if (/[.!?:]["'”’)\]]?$/.test(text)) text += "\n\n" + page;
-    else text = joinLines(text, page);
+    else text = joinLines(text, page, vocabulary);
   }
   return text;
 }
 
-function joinLines(before: string, after: string): string {
-  // "informa-" + "tion" → "information". Trade-off: a real hyphenated compound split
-  // across lines ("well-" + "known") also loses its hyphen.
-  if (/\p{Ll}-$/u.test(before) && /^\p{Ll}/u.test(after)) return before.slice(0, -1) + after;
+// Joins a wrapped line onto the text before it. The hard case is a line ending in a
+// hyphen, which is either:
+//   - a word split by hyphenation: "infor-" + "mation" → "information"
+//   - a real hyphenated compound that wrapped: "software-" + "development" → keep it
+// Text alone can't tell these apart, so the document decides: the hyphen is removed only
+// if the joined word ("information") appears elsewhere in the same document. Otherwise
+// it's kept: an occasional "infor-mation" is better than inventing "softwaredevelopment".
+function joinLines(before: string, after: string, vocabulary: Set<string>): string {
+  const head = /(\p{L}*\p{Ll})-$/u.exec(before)?.[1];
+  const tail = /^\p{Ll}\p{L}*/u.exec(after)?.[0];
+  if (head && tail) {
+    return vocabulary.has((head + tail).toLowerCase())
+      ? before.slice(0, -1) + after // drop the hyphen, no space
+      : before + after; // keep the hyphen, no space
+  }
   return before + " " + after;
+}
+
+// Every word (run of letters) in the text, lowercased. Halves of a split word are
+// separate runs here ("infor", "mation"), so a split word only counts as known if it
+// also appears unsplit somewhere.
+function wordsIn(text: string): Set<string> {
+  return new Set(text.toLowerCase().match(/\p{L}+/gu) ?? []);
 }
