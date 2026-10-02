@@ -1,0 +1,19 @@
+How Lighthouses Work
+
+For most of recorded history, a ship approaching land at night had little to go on except the stars and the sound of surf. Lighthouses changed that. A tall tower with a bright, distinctive light gave sailors a fixed point they could identify from miles out at sea, and a warning that rocks or shallows lay ahead.
+
+The earliest lighthouses burned open fires. The Pharos of Alexandria, completed around 280 BC, is the most famous example, and it reportedly stood well over one hundred metres tall. Open fires had obvious problems: they consumed huge amounts of fuel, they were hard to keep lit in storms, and most of their light went straight up into the sky instead of out toward the water.
+
+Candles and oil lamps came next. They were easier to manage than a bonfire, but on their own they were dim. The real breakthrough was learning to collect light and send it in a useful direction. Early keepers placed polished metal reflectors behind their lamps, which concentrated the beam somewhat, but a great deal of light was still wasted.
+
+In 1822 the French physicist Augustin Fresnel designed a new kind of lens. Instead of one thick, heavy piece of curved glass, a Fresnel lens is built from rings of glass prisms arranged around a central bulls-eye. Each ring bends the light by just the right amount, so nearly all of it leaves the lens as a narrow horizontal beam. The design was lighter and far more efficient than anything before it, and a lamp that had been visible for a few miles could suddenly be seen for twenty or more.
+
+Every lighthouse needs to be recognisable, not just bright. If two lights on the same coast looked identical, a navigator could mistake one headland for another. To prevent this, each light is given a characteristic: a particular pattern of flashes, a colour, or a period of darkness between flashes. A chart might list a light as "Fl(2) W 10s", meaning two white flashes every ten seconds. Sailors time the flashes with a watch and compare the result to the chart.
+
+Rotating lenses made those patterns possible. The heavy lens assembly floated on a bath of mercury so that a clockwork mechanism could turn it smoothly. Keepers wound the clockwork by hand every few hours through the night, trimmed the wicks, and cleaned soot from the glass. It was demanding work, and a keeper who let the light fail could put ships at risk.
+
+Fog was a separate problem. A light that can be seen for twenty miles on a clear night may be invisible a few hundred metres away in thick fog. Many stations therefore added fog signals: bells, then steam whistles, and later powerful compressed-air horns known as diaphones. Like lights, fog signals were given distinctive patterns so that they could be identified by sound alone.
+
+During the twentieth century, electricity replaced oil, and automatic equipment gradually replaced keepers. Sensors switch the light on at dusk and off at dawn, and backup lamps rotate into place if the main bulb fails. Most lighthouses today are monitored remotely. Satellite navigation has reduced how much ships depend on them, but lights are still maintained as a backup, because electronics can fail and a visible light needs no power on board the ship to be useful.
+
+Many old towers are now museums, and some of the original Fresnel lenses are displayed indoors where visitors can see the prisms up close. The basic idea they represent, gathering scattered energy and aiming it where it is needed, is still used in car headlights, overhead projectors, and solar collectors.
