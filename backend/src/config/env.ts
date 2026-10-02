@@ -14,6 +14,14 @@ const EnvSchema = z.object({
     .string()
     .regex(/^postgres(ql)?:\/\//, "must be a postgresql:// connection string"),
 
+  // Google AI Studio key for Gemini (embeddings now, answer generation in Step 5).
+  // Only checked for presence/shape; a wrong key shows up as a 400/403 on the first call.
+  GEMINI_API_KEY: z
+    .string()
+    .trim()
+    .min(30, "looks too short to be a Gemini API key")
+    .regex(/^\S+$/, "must not contain spaces"),
+
   // Comma-separated list of origins allowed to call the API (the Next.js frontend).
   CORS_ORIGIN: z
     .string()
