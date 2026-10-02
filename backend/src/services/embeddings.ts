@@ -102,12 +102,14 @@ export type EmbedderDeps = {
   embedBatch?: EmbedBatch;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
+  log?: (message: string) => void;
 };
 
 export function createEmbedder(deps: EmbedderDeps = {}) {
   const embedBatch = deps.embedBatch ?? geminiEmbedBatch;
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const now = deps.now ?? Date.now;
+  const log = deps.log ?? console.log;
 
   async function embedWithRetry(texts: string[], policy: RetryPolicy, deadline: number): Promise<number[][]> {
     for (let attempt = 1; ; attempt++) {
@@ -138,6 +140,8 @@ export function createEmbedder(deps: EmbedderDeps = {}) {
             ? new EmbeddingError("rate_limited", "Embedding service is busy (rate limit). Try again in a few minutes.", { cause: error })
             : new EmbeddingError("unavailable", "Embedding service is unavailable. Try again later.", { cause: error });
         }
+        // Without this, a document waiting out a rate limit looks stuck on "processing".
+        log(`[embeddings] ${describeFailure(failure, error)}, waiting ${seconds(waitMs)} (attempt ${attempt + 1}/${policy.maxAttempts})`);
         await sleep(waitMs);
       }
     }
@@ -198,6 +202,19 @@ function checkVectors(vectors: number[][], expectedCount: number): void {
 }
 
 type Failure = { kind: "rate-limit" | "transient" | "fatal"; retryAfterMs?: number };
+
+// "rate limited" / "service error (503)" / "request failed (TypeError: fetch failed)"
+function describeFailure(failure: Failure, error: unknown): string {
+  if (failure.kind === "rate-limit") return "rate limited";
+  const status = (error as { status?: unknown })?.status;
+  if (typeof status === "number") return `service error (${status})`;
+  const name = error instanceof Error ? error.name : "Error";
+  const message = error instanceof Error ? error.message : String(error);
+  return `request failed (${name}: ${message.slice(0, 80)})`;
+}
+
+// 38000 → "38s", 1500 → "1.5s"
+const seconds = (ms: number) => `${Number((ms / 1000).toFixed(1))}s`;
 
 // Decides whether an error is worth retrying. Works on the SDK's ApiError shape
 // ({ status, message: <JSON body> }) without importing it, so tests can fake it.

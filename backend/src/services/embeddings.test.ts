@@ -32,17 +32,21 @@ function fakeApi(fail: (call: number) => unknown = () => undefined) {
   return { calls, embedBatch };
 }
 
-// A fake clock that only moves when the code under test sleeps.
+// A fake clock that only moves when the code under test sleeps; also captures log lines
+// (so tests don't print to the console and can assert on them).
 function fakeTime() {
   let t = 0;
   const waits: number[] = [];
+  const logs: string[] = [];
   return {
     waits,
+    logs,
     now: () => t,
     sleep: async (ms: number) => {
       waits.push(ms);
       t += ms;
     },
+    log: (message: string) => logs.push(message),
   };
 }
 
@@ -125,6 +129,7 @@ describe("retries", () => {
     assert.equal(vectors.length, 3);
     assert.deepEqual(time.waits, [38_000]);
     assert.equal(api.calls.length, 2);
+    assert.deepEqual(time.logs, ["[embeddings] rate limited, waiting 38s (attempt 2/6)"]);
   });
 
   it("waits 20s on a 429 that gives no retryDelay", async () => {
@@ -142,6 +147,7 @@ describe("retries", () => {
       { name: "EmbeddingError", code: "quota_exhausted", message: "Embedding quota exceeded. Try again later." },
     );
     assert.deepEqual(time.waits, []);
+    assert.deepEqual(time.logs, [], "no wait, so nothing to log");
   });
 
   it("backs off 1s, 2s, 4s on server errors and network failures", async () => {
@@ -150,6 +156,11 @@ describe("retries", () => {
     await createEmbedder({ embedBatch: api.embedBatch, ...time }).embedDocumentChunks(chunks(1), "Doc");
     assert.deepEqual(time.waits, [1000, 2000, 4000]);
     assert.equal(api.calls.length, 4);
+    assert.deepEqual(time.logs, [
+      "[embeddings] service error (503), waiting 1s (attempt 2/6)",
+      "[embeddings] request failed (TypeError: fetch failed), waiting 2s (attempt 3/6)",
+      "[embeddings] service error (500), waiting 4s (attempt 4/6)",
+    ]);
   });
 
   it("does not retry requests the API rejects (bad key, bad request)", async () => {
