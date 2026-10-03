@@ -4,8 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { DEV_USER_EMAIL, PRODUCT_NAME } from "@/lib/config";
 
-// Step 7 adds "Ask" (/chat) here.
-const NAV = [{ href: "/dashboard", label: "Documents" }] as const;
+const NAV = [
+  { href: "/dashboard", label: "Documents" },
+  { href: "/chat", label: "Ask" },
+] as const;
 
 export function SiteHeader() {
   const pathname = usePathname();

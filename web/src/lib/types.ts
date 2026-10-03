@@ -30,3 +30,51 @@ export type DocumentChunk = {
 };
 
 export type DocumentWithChunks = { document: DocumentSummary; chunks: DocumentChunk[] };
+
+// ── Questions and answers (backend/src/services/citations.ts, answering.ts) ──────────
+
+// One source an answer cites: [marker] in the answer text → a chunk of a document.
+export type Citation = {
+  marker: number;
+  chunkId: string;
+  documentId: string;
+  filename: string;
+  chunkIndex: number;
+  similarity: number; // cosine similarity of the chunk to the question, 0–1
+  snippet: string; // the first ~300 characters of the chunk, saved with the answer
+};
+
+// History citations also say whether the chunk still exists (its document may have
+// been deleted since the answer was given).
+export type HistoryCitation = Citation & { available: boolean };
+
+// GET /api/queries
+export type HistoryQuery = {
+  id: string;
+  question: string;
+  answer: string;
+  answered: boolean; // false: the documents didn't contain the answer
+  citations: HistoryCitation[];
+  createdAt: string;
+};
+
+export type RetrievalInfo = {
+  candidates: number;
+  sourcesUsed: number;
+  bestSimilarity: number | null;
+  skipped: null | "no_documents" | "below_threshold";
+};
+
+// The final answer of POST /api/query (and the `done` event of /api/query/stream).
+export type AnswerResult = {
+  id: string;
+  question: string;
+  answer: string;
+  answered: boolean;
+  citations: Citation[];
+  truncated: boolean;
+  model: string | null;
+  retrieval: RetrievalInfo;
+  timings: { embedMs: number; searchMs: number; generateMs: number; totalMs: number };
+  createdAt: string;
+};

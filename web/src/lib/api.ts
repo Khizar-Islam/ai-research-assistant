@@ -1,7 +1,7 @@
 // The only place the frontend talks to the Express API. Every request goes through
 // apiFetch, so cross-cutting concerns (base URL, errors, and auth in Step 8) live here once.
 import { API_URL } from "./config";
-import type { DocumentListItem, DocumentSummary, DocumentWithChunks } from "./types";
+import type { DocumentListItem, DocumentSummary, DocumentWithChunks, HistoryQuery } from "./types";
 
 // A failed request, with a message that is safe to show the user. status 0 means the
 // API never answered (server down, wrong URL, CORS rejection).
@@ -61,4 +61,9 @@ export function deleteDocument(id: string): Promise<void> {
 
 export function getDocumentChunks(id: string, signal?: AbortSignal): Promise<DocumentWithChunks> {
   return apiFetch<DocumentWithChunks>(`/api/documents/${encodeURIComponent(id)}/chunks`, { signal });
+}
+
+// The user's past questions and answers, newest first (at most 50).
+export function listQueries(limit = 20, signal?: AbortSignal): Promise<HistoryQuery[]> {
+  return apiFetch<{ queries: HistoryQuery[] }>(`/api/queries?limit=${limit}`, { signal }).then((r) => r.queries);
 }
