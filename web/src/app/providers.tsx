@@ -1,9 +1,10 @@
 "use client";
 
-// Client-side context shared by every page: the TanStack Query cache (server state such
-// as the document list) and the app-wide motion settings.
+// Client-side context shared by every page: who is signed in (NextAuth), the TanStack
+// Query cache (server state such as the document list) and the app-wide motion settings.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MotionConfig } from "motion/react";
+import { SessionProvider } from "next-auth/react";
 import { useState, type ReactNode } from "react";
 
 export function Providers({ children }: { children: ReactNode }) {
@@ -23,10 +24,12 @@ export function Providers({ children }: { children: ReactNode }) {
   );
 
   return (
-    <QueryClientProvider client={queryClient}>
-      {/* "user": animations follow the OS "reduce motion" setting. */}
-      <MotionConfig reducedMotion="user">{children}</MotionConfig>
-    </QueryClientProvider>
+    <SessionProvider>
+      <QueryClientProvider client={queryClient}>
+        {/* "user": animations follow the OS "reduce motion" setting. */}
+        <MotionConfig reducedMotion="user">{children}</MotionConfig>
+      </QueryClientProvider>
+    </SessionProvider>
   );
 }
 
