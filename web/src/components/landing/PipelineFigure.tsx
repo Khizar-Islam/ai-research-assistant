@@ -3,9 +3,11 @@
 // "Fig. 1": the pipeline drawn in the app's own visual language. A page of text splits
 // into passages, the passages become a chunk strip (the same strip the dashboard uses
 // for upload progress), the question pulls out three of them, and the answer cites them.
-// Purely illustrative, so hidden from screen readers; the text beside it says the same.
-import { motion, useReducedMotion, type Variants } from "motion/react";
-import type { ReactNode } from "react";
+// The drawing is purely illustrative, so hidden from screen readers; the text beside it
+// says the same. It plays when it scrolls into view (on a phone it sits below the fold, and
+// playing on load would finish before anyone saw it), and "Replay" plays it again.
+import { motion, useInView, useReducedMotion, type Variants } from "motion/react";
+import { useRef, useState, type ReactNode } from "react";
 
 // Line widths (%) of the illustrated page, grouped into four passages.
 const PASSAGES = [
@@ -21,7 +23,7 @@ const RETRIEVED = new Map([
   [15, 3],
 ]); // segment index → footnote number
 
-// Timeline, in seconds from mount.
+// Timeline, in seconds from when the drawing starts playing.
 const T = { lines: 0.2, split: 1.1, strip: 1.7, question: 3.0, retrieve: 3.4, answer: 4.0 };
 
 const fade: Variants = {
@@ -30,14 +32,43 @@ const fade: Variants = {
 };
 
 export function PipelineFigure() {
-  let line = 0;
-  // Reduced motion: show the finished figure straight away. initial={false} starts every
-  // element at its end state (MotionConfig alone would still play the fades and colors).
+  const ref = useRef<HTMLElement>(null);
+  const inView = useInView(ref, { once: true, amount: 0.5 });
+  const [run, setRun] = useState(0); // bumped by Replay: remounts the drawing
+  // Reduced motion: show the finished figure straight away, and there's nothing to replay.
   const still = Boolean(useReducedMotion());
 
   return (
-    <figure aria-hidden="true" className="border border-rule bg-paper-deep/60 p-5 sm:p-6">
-      <motion.div initial={still ? false : "hidden"} animate="shown" className="space-y-6">
+    <figure ref={ref} className="border border-rule bg-paper-deep/60 p-5 sm:p-6">
+      <Drawing key={run} play={inView} still={still} />
+
+      <figcaption className="mt-6 flex items-baseline justify-between gap-4 border-t border-rule pt-3 font-mono text-[11px] text-ink-soft">
+        <span>Fig. 1 — How an answer is made</span>
+        {!still && (
+          <button
+            type="button"
+            onClick={() => setRun((n) => n + 1)}
+            aria-label="Replay the figure's animation"
+            className="link-underline shrink-0 whitespace-nowrap hover:text-ink"
+          >
+            Replay <span aria-hidden="true">↻</span>
+          </button>
+        )}
+      </figcaption>
+    </figure>
+  );
+}
+
+// Everything starts at its initial state and waits for `play`. With `still`, initial={false}
+// starts every element at its end state instead (MotionConfig alone would still play the
+// fades and colors).
+function Drawing({ play, still }: { play: boolean; still: boolean }) {
+  let line = 0;
+  const run = play || still;
+
+  return (
+    <div aria-hidden="true">
+      <motion.div initial={still ? false : "hidden"} animate={run ? "shown" : "hidden"} className="space-y-6">
         <Step number="01" label="extract & chunk">
           <div>
             {PASSAGES.map((widths, p) => (
@@ -48,7 +79,7 @@ export function PipelineFigure() {
                 // mark. The gaps are always in the layout; the slide is a transform, so the
                 // figure's size never changes and nothing around it shifts.
                 initial={still ? false : { y: -10 * p, borderColor: "rgba(0,0,0,0)" }}
-                animate={{ y: 0, borderColor: "var(--color-ink-faint)" }}
+                animate={run ? { y: 0, borderColor: "var(--color-ink-faint)" } : undefined}
                 transition={{ delay: T.split + p * 0.12, duration: 0.5, ease: "easeInOut" }}
               >
                 <motion.span
@@ -64,7 +95,7 @@ export function PipelineFigure() {
                     className="my-1.5 h-[5px] origin-left rounded-full bg-ink/25"
                     style={{ width: `${width}%` }}
                     initial={still ? false : { scaleX: 0 }}
-                    animate={{ scaleX: 1 }}
+                    animate={run ? { scaleX: 1 } : undefined}
                     transition={{ delay: T.lines + line++ * 0.04, duration: 0.35, ease: "easeOut" }}
                   />
                 ))}
@@ -80,7 +111,7 @@ export function PipelineFigure() {
                 key={i}
                 className="h-3 flex-1"
                 initial={still ? false : { backgroundColor: "var(--color-rule)" }}
-                animate={{
+                animate={!run ? undefined : {
                   backgroundColor: still
                     ? `var(--color-${RETRIEVED.has(i) ? "mark" : "ink"})`
                     : RETRIEVED.has(i)
@@ -108,17 +139,13 @@ export function PipelineFigure() {
         <Step number="04" label="answer">
           <motion.p variants={fade} custom={T.answer} className="font-serif text-[15px] leading-relaxed">
             A randomised controlled trial
-            <Footnote n={1} delay={T.answer + 0.5} still={still} />, run across three sites over two years
-            <Footnote n={2} delay={T.answer + 0.65} still={still} />, with outcomes scored blind
-            <Footnote n={3} delay={T.answer + 0.8} still={still} />.
+            <Footnote n={1} delay={T.answer + 0.5} still={still} run={run} />, run across three sites over two years
+            <Footnote n={2} delay={T.answer + 0.65} still={still} run={run} />, with outcomes scored blind
+            <Footnote n={3} delay={T.answer + 0.8} still={still} run={run} />.
           </motion.p>
         </Step>
       </motion.div>
-
-      <figcaption className="mt-6 border-t border-rule pt-3 font-mono text-[11px] text-ink-soft">
-        Fig. 1 — How an answer is made
-      </figcaption>
-    </figure>
+    </div>
   );
 }
 
@@ -133,12 +160,12 @@ function Step({ number, label, children }: { number: string; label: string; chil
   );
 }
 
-function Footnote({ n, delay, still }: { n: number; delay: number; still: boolean }) {
+function Footnote({ n, delay, still, run }: { n: number; delay: number; still: boolean; run: boolean }) {
   return (
     <motion.sup
       className="ml-px font-mono text-[10px] text-mark"
       initial={still ? false : { opacity: 0, y: -3 }}
-      animate={{ opacity: 1, y: 0 }}
+      animate={run ? { opacity: 1, y: 0 } : undefined}
       transition={{ delay, duration: 0.3 }}
     >
       {n}

@@ -15,9 +15,12 @@ export function UserMenu() {
 
   if (status === "loading") return <span className="ml-auto" aria-hidden="true" />;
 
+  // Each root below carries "fade-in": it eases in when it first appears (page load, or
+  // after signing in or out, which remounts it), never on ordinary navigation.
+
   if (!session?.user) {
     return (
-      <Link href="/signin" className="link-underline ml-auto text-sm text-ink-soft hover:text-ink">
+      <Link href="/signin" className="link-underline fade-in ml-auto text-sm text-ink-soft hover:text-ink">
         Sign in
       </Link>
     );
@@ -37,7 +40,7 @@ export function UserMenu() {
 
   return (
     // On phones only "Sign out" shows (the photo and name need room the header doesn't have).
-    <div className="ml-auto flex items-center gap-3">
+    <div className="fade-in ml-auto flex items-center gap-3">
       {image ? (
         <Image src={image} alt="" width={28} height={28} className="hidden size-7 border border-rule sm:block" referrerPolicy="no-referrer" />
       ) : (

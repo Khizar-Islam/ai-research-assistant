@@ -107,3 +107,65 @@
     text-decoration-color: currentColor;
   }
 }
+
+/* ── Page transitions (React <ViewTransition>, see components/PageTransition.tsx) ──────
+   Pages crossfade: opacity only, so nothing slides across the screen (pages here are
+   siblings, not deeper/shallower, so there's no direction to show). The header stays
+   put as the fixed point while the content changes. */
+::view-transition {
+  pointer-events: none; /* clicks during the brief transition reach the live page */
+}
+::view-transition-old(.page) {
+  animation: 120ms cubic-bezier(0.4, 0, 1, 1) both vt-fade-out;
+}
+::view-transition-new(.page) {
+  animation: 220ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both vt-fade-in;
+}
+::view-transition-group(site-header) {
+  animation: none;
+  z-index: 100;
+}
+::view-transition-old(site-header) {
+  display: none; /* no flash of two headers */
+}
+::view-transition-new(site-header) {
+  animation: none;
+}
+@keyframes vt-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes vt-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ── Reveal: content easing up into place when a page first appears ───────────────────
+   Pure CSS, so it never waits for JavaScript (the hero is the first thing anyone sees).
+   Stagger with style={{ "--reveal-index": n }}. With reduced motion: a short fade, no rise. */
+@keyframes reveal {
+  from {
+    opacity: 0;
+    translate: 0 10px;
+  }
+}
+@keyframes reveal-fade {
+  from {
+    opacity: 0;
+  }
+}
+@utility reveal {
+  animation: reveal 450ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--reveal-index, 0) * 70ms);
+  @media (prefers-reduced-motion: reduce) {
+    animation: reveal-fade 200ms ease-out both;
+  }
+}
+
+/* A plain fade for things that appear in place (no movement, so it suits reduced motion
+   too): e.g. the header's user menu when the signed-in user changes. */
+@utility fade-in {
+  animation: reveal-fade 200ms ease-out both;
+}
