@@ -54,7 +54,7 @@ export default async function SignInPage({ searchParams }: Props) {
           >
             <button
               type="submit"
-              className="flex w-full items-center justify-center gap-3 bg-ink px-5 py-3 text-sm font-medium text-paper transition-colors hover:bg-mark"
+              className="press flex w-full items-center justify-center gap-3 bg-ink px-5 py-3 text-sm font-medium text-paper hover:bg-mark"
             >
               Continue with Google
             </button>
@@ -78,7 +78,7 @@ export default async function SignInPage({ searchParams }: Props) {
               >
                 <button
                   type="submit"
-                  className="w-full border border-ink px-5 py-3 text-sm font-medium transition-colors hover:border-mark hover:text-mark"
+                  className="press w-full border border-ink px-5 py-3 text-sm font-medium hover:border-mark hover:text-mark"
                 >
                   Continue as {tester.name}
                 </button>

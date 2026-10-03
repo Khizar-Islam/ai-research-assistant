@@ -49,7 +49,7 @@ export default async function Home() {
           <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-3">
             <Link
               href={signedIn ? "/dashboard" : "/signin?callbackUrl=%2Fdashboard"}
-              className="bg-ink px-5 py-3 text-sm font-medium text-paper transition-colors hover:bg-mark"
+              className="press inline-block bg-ink px-5 py-3 text-sm font-medium text-paper hover:bg-mark"
             >
               {signedIn ? "Open your documents" : "Sign in to start"} <span aria-hidden="true">→</span>
             </Link>

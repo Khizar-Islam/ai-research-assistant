@@ -17,7 +17,7 @@ export function UserMenu() {
 
   if (!session?.user) {
     return (
-      <Link href="/signin" className="ml-auto text-sm text-ink-soft underline-offset-4 hover:text-ink hover:underline">
+      <Link href="/signin" className="link-underline ml-auto text-sm text-ink-soft hover:text-ink">
         Sign in
       </Link>
     );
@@ -52,7 +52,7 @@ export function UserMenu() {
         type="button"
         onClick={handleSignOut}
         disabled={leaving}
-        className="text-sm whitespace-nowrap text-ink-soft underline-offset-4 hover:text-mark hover:underline disabled:opacity-50"
+        className="link-underline text-sm whitespace-nowrap text-ink-soft hover:text-mark disabled:opacity-50"
       >
         {leaving ? "Signing out…" : "Sign out"}
       </button>

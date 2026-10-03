@@ -130,7 +130,7 @@ export function ChunkPanel({ document, onClose, focusChunkIndex }: Props) {
               ref={closeRef}
               type="button"
               onClick={onClose}
-              className="shrink-0 pt-1 text-sm text-ink-soft underline-offset-4 hover:text-ink hover:underline"
+              className="link-underline shrink-0 pt-1 text-sm text-ink-soft hover:text-ink"
             >
               Close <span className="font-mono text-[11px] text-ink-faint">esc</span>
             </button>

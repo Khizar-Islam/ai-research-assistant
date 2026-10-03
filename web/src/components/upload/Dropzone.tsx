@@ -2,7 +2,7 @@
 
 // Drag files in, or click (or Tab + Enter) to choose them. A <label> wrapping a real file
 // input, so keyboard and screen-reader users get the native file picker for free.
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import type { UploadProblem } from "@/lib/hooks/useDocuments";
 import { ACCEPTED_EXTENSIONS } from "@/lib/pipeline";
@@ -21,6 +21,7 @@ const BARS = [100, 92, 97, 60, 95, 88, 74];
 
 export function Dropzone({ onFiles, uploading, problems, onDismiss }: Props) {
   const [dragging, setDragging] = useState(false);
+  const reducedMotion = useReducedMotion(); // margins aren't covered by MotionConfig
   // dragenter/dragleave fire for every child element crossed, so count them instead of
   // trusting a single leave event (which would make the highlight flicker).
   const depth = useRef(0);
@@ -66,7 +67,7 @@ export function Dropzone({ onFiles, uploading, problems, onDismiss }: Props) {
         }}
         onDrop={handleDrop}
         className={`flex cursor-pointer items-center gap-6 border border-dashed px-6 py-7 transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-3 has-[:focus-visible]:outline-mark sm:gap-8 sm:px-8 ${
-          dragging ? "border-mark bg-mark/5" : "border-ink-faint hover:border-ink hover:bg-paper-deep/60"
+          dragging ? "border-mark bg-mark/5" : "border-ink-faint hover:border-ink hover:bg-paper-deep/60 active:bg-paper-deep"
         }`}
       >
         <input
@@ -89,7 +90,7 @@ export function Dropzone({ onFiles, uploading, problems, onDismiss }: Props) {
               style={{ width: `${width}%` }}
               // Held over the zone, the "page" splits into three passages.
               animate={{ marginTop: i === 0 ? 0 : dragging && (i === 3 || i === 5) ? 9 : 4 }}
-              transition={{ type: "spring", stiffness: 400, damping: 28 }}
+              transition={reducedMotion ? { duration: 0 } : { type: "spring", stiffness: 400, damping: 28 }}
             />
           ))}
         </div>

@@ -76,7 +76,7 @@ export function AskForm({ busy, disabled, onAsk, onStop }: Props) {
           <button
             type="button"
             onClick={onStop}
-            className="h-11 shrink-0 border border-ink px-4 text-sm font-medium hover:border-mark hover:text-mark"
+            className="press h-11 shrink-0 border border-ink px-4 text-sm font-medium hover:border-mark hover:text-mark"
           >
             Stop
           </button>
@@ -84,7 +84,7 @@ export function AskForm({ busy, disabled, onAsk, onStop }: Props) {
           <button
             type="submit"
             disabled={!canAsk}
-            className="h-11 shrink-0 bg-ink px-5 text-sm font-medium text-paper transition-colors hover:bg-mark disabled:cursor-not-allowed disabled:bg-ink-faint"
+            className="press h-11 shrink-0 bg-ink px-5 text-sm font-medium text-paper hover:bg-mark disabled:cursor-not-allowed disabled:bg-ink-faint"
           >
             Ask
           </button>

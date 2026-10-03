@@ -46,7 +46,8 @@ export function ChunkStrip({ total, embedded, highlight, onCellClick, maxCells =
           // The working batch ripples: same animation, offset per cell.
           animationDelay: state === "working" ? `${(i % 24) * 70}ms` : undefined,
         };
-        const cellClass = `flex-1 transition-colors duration-500 ${color} ${state === "working" ? "motion-safe:animate-ripple" : ""}`;
+        // motion-reduce: the left-to-right fill sweep becomes an instant change.
+        const cellClass = `flex-1 transition-colors duration-500 motion-reduce:transition-none ${color} ${state === "working" ? "motion-safe:animate-ripple" : ""}`;
 
         return onCellClick ? (
           // Mouse shortcut only (tabIndex -1): 64 extra Tab stops would bury the panel's
@@ -57,7 +58,7 @@ export function ChunkStrip({ total, embedded, highlight, onCellClick, maxCells =
             tabIndex={-1}
             onClick={() => onCellClick(first)}
             aria-label={end - first > 1 ? `Passages ${first + 1}–${end}` : `Passage ${first + 1}`}
-            className={`${cellClass} cursor-pointer hover:opacity-70`}
+            className={`${cellClass} cursor-pointer hover:opacity-70 active:opacity-50`}
             style={style}
           />
         ) : (

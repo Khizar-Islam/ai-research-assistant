@@ -76,7 +76,7 @@ export function Footnotes({ entryId, citations }: Props) {
                       <button
                         type="button"
                         onClick={(event) => openPassage(citation, event.currentTarget)}
-                        className="font-mono text-[11px] text-ink-soft underline-offset-4 hover:text-mark hover:underline"
+                        className="link-underline font-mono text-[11px] text-ink-soft hover:text-mark"
                       >
                         Open passage <span aria-hidden="true">→</span>
                         <span className="sr-only"> {citation.chunkIndex + 1} of {citation.filename}</span>

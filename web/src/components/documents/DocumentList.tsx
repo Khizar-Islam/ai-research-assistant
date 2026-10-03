@@ -124,7 +124,7 @@ function LoadingRows() {
   return (
     <div aria-busy="true" aria-label="Loading documents" className="mt-10 border-t border-ink">
       {[62, 48, 55].map((width) => (
-        <div key={width} className="animate-pulse border-b border-rule py-5">
+        <div key={width} className="border-b border-rule py-5 motion-safe:animate-pulse">
           <div className="h-4 bg-rule" style={{ width: `${width}%` }} />
           <div className="mt-2 h-3 w-40 bg-rule/70" />
         </div>

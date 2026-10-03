@@ -1,8 +1,9 @@
 "use client";
 
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { FILE_TYPE_LABEL, formatUploadedAt, plural, STAGE_LABEL } from "@/lib/format";
+import { loop } from "@/lib/motion";
 import { EMBED_BATCH_SIZE, STAGES } from "@/lib/pipeline";
 import type { DocumentListItem, IngestStage } from "@/lib/types";
 import { ChunkStrip } from "./ChunkStrip";
@@ -14,6 +15,7 @@ type Props = {
 };
 
 export function DocumentRow({ document, onDelete, onOpen }: Props) {
+  const reducedMotion = useReducedMotion();
   const { filename, fileType, status, createdAt, chunkCount, errorMessage, stage } = document;
 
   return (
@@ -23,7 +25,7 @@ export function DocumentRow({ document, onDelete, onOpen }: Props) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -16, transition: { duration: 0.2 } }}
       transition={{ duration: 0.3, ease: "easeOut" }}
-      className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-2 border-b border-rule py-5 sm:grid-cols-[minmax(0,1fr)_15rem_8.5rem] sm:items-baseline"
+      className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-2 border-b border-rule py-5 transition-colors duration-150 hover:bg-paper-deep/40 sm:grid-cols-[minmax(0,1fr)_15rem_8.5rem] sm:items-baseline"
     >
       {/* Explicit grid positions at both sizes: phones put Remove beside the filename and
           the status underneath; wider screens use one row of filename · status · Remove. */}
@@ -34,7 +36,7 @@ export function DocumentRow({ document, onDelete, onOpen }: Props) {
               type="button"
               onClick={(event) => onOpen(document, event.currentTarget)}
               aria-haspopup="dialog"
-              className="max-w-full truncate text-left underline-offset-4 hover:text-mark hover:underline"
+              className="link-underline max-w-full truncate text-left hover:text-mark"
             >
               {filename}
             </button>
@@ -75,7 +77,10 @@ export function DocumentRow({ document, onDelete, onOpen }: Props) {
             className="col-span-full overflow-hidden"
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0, transition: { duration: 0.35, delay: 0.6 } }} // let the last fill finish first
+            // Height isn't covered by MotionConfig's reduced-motion handling, and the rows
+            // below would glide with it: with reduced motion it opens and closes at once.
+            transition={reducedMotion ? { duration: 0 } : undefined}
+            exit={{ opacity: 0, height: 0, transition: reducedMotion ? { duration: 0 } : { duration: 0.35, delay: 0.6 } }} // let the last fill finish first
           >
             <Progress document={document} />
           </motion.div>
@@ -185,14 +190,11 @@ function StageTrack({ current, embedded, total }: { current: IngestStage; embedd
 }
 
 function Status({ swatch, className, label, pulse }: { swatch: string; className: string; label: string; pulse?: boolean }) {
+  // The pulse says "still working"; with reduced motion the ochre dot and the label say it.
+  const pulsing = loop(useReducedMotion() || !pulse, { opacity: [1, 0.3, 1] }, 1.6);
   return (
     <p className={`flex items-center gap-2 text-sm ${className}`}>
-      <motion.span
-        aria-hidden="true"
-        className={`size-2 shrink-0 ${swatch}`}
-        animate={pulse ? { opacity: [1, 0.3, 1] } : { opacity: 1 }}
-        transition={pulse ? { duration: 1.6, repeat: Infinity, ease: "easeInOut" } : undefined}
-      />
+      <motion.span aria-hidden="true" className={`size-2 shrink-0 ${swatch}`} {...pulsing} />
       {label}
     </p>
   );
@@ -221,7 +223,7 @@ function DeleteControl({ filename, onConfirm }: { filename: string; onConfirm: (
         type="button"
         onClick={() => setConfirming(true)}
         aria-label={`Remove ${filename}`}
-        className="text-sm text-ink-soft underline-offset-4 hover:text-mark hover:underline"
+        className="link-underline text-sm text-ink-soft hover:text-mark"
       >
         Remove
       </button>
@@ -239,7 +241,7 @@ function DeleteControl({ filename, onConfirm }: { filename: string; onConfirm: (
         ref={confirmRef}
         type="button"
         onClick={onConfirm}
-        className="bg-mark px-2.5 py-1 font-medium text-paper hover:bg-mark-deep"
+        className="press bg-mark px-2.5 py-1 font-medium text-paper hover:bg-mark-deep"
       >
         Remove
       </button>

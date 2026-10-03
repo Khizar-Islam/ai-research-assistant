@@ -89,7 +89,7 @@ function LoadingEntries() {
   return (
     <div aria-busy="true" aria-label="Loading earlier questions">
       {[70, 52].map((width) => (
-        <div key={width} className="animate-pulse border-t border-rule py-8 first:border-t-0">
+        <div key={width} className="border-t border-rule py-8 first:border-t-0 motion-safe:animate-pulse">
           <div className="h-3 w-28 bg-rule/70" />
           <div className="mt-3 h-6 bg-rule" style={{ width: `${width}%` }} />
           <div className="mt-5 h-4 w-full bg-rule/60" />

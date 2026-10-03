@@ -62,3 +62,48 @@
     outline-offset: 3px;
   }
 }
+
+/* ── Motion ─────────────────────────────────────────────────────────────────────────
+   Micro-interactions shared by every control, in the same timings as lib/motion.ts
+   (120 ms, decelerating). Colors may always ease; anything that moves is limited to
+   people who haven't asked their OS to reduce motion. */
+@layer base {
+  a,
+  button,
+  input,
+  textarea,
+  select,
+  label,
+  summary {
+    transition-property: color, background-color, border-color, text-decoration-color, opacity, transform;
+    transition-duration: 120ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /* Pressing a button nudges it down a pixel: the click registered. */
+  @media (prefers-reduced-motion: no-preference) {
+    button:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+  }
+}
+
+/* Filled, block-sized buttons (Ask, Sign in, Remove…) press in slightly instead. */
+@utility press {
+  @media (prefers-reduced-motion: no-preference) {
+    &:active:not(:disabled):not([aria-disabled="true"]) {
+      transform: scale(0.98);
+    }
+  }
+}
+
+/* Text links and text buttons: the underline fades in on hover instead of snapping on
+   (text-decoration-line can't transition; its color can). */
+@utility link-underline {
+  text-decoration-line: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 4px;
+  &:hover {
+    text-decoration-color: currentColor;
+  }
+}

@@ -3,9 +3,10 @@
 // The question being answered right now. Shows what the server is really doing (searching,
 // then writing from N passages), the answer as it streams in, and what went wrong if it
 // failed. Once the answer is done it leaves, and the finished entry takes its place.
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import type { LiveAnswer } from "@/lib/hooks/useAsk";
 import { plural } from "@/lib/format";
+import { loop } from "@/lib/motion";
 import { AnswerText } from "./AnswerText";
 import { QuestionHeading } from "./Entry";
 
@@ -93,14 +94,9 @@ function Progress({ live }: { live: LiveAnswer }) {
   );
 }
 
-// A thin blinking bar at the end of the text while the model is still writing.
+// A thin bar at the end of the text while the model is still writing: blinking, or steady
+// when the user has asked for reduced motion.
 function Caret() {
-  return (
-    <motion.span
-      aria-hidden="true"
-      className="ml-0.5 inline-block h-[1.1em] w-[2px] translate-y-[3px] bg-ink"
-      animate={{ opacity: [1, 0, 1] }}
-      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-    />
-  );
+  const blink = loop(useReducedMotion(), { opacity: [1, 0, 1] }, 1);
+  return <motion.span aria-hidden="true" className="ml-0.5 inline-block h-[1.1em] w-[2px] translate-y-[3px] bg-ink" {...blink} />;
 }

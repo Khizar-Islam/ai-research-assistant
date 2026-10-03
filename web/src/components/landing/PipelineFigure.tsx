@@ -4,7 +4,7 @@
 // into passages, the passages become a chunk strip (the same strip the dashboard uses
 // for upload progress), the question pulls out three of them, and the answer cites them.
 // Purely illustrative, so hidden from screen readers; the text beside it says the same.
-import { motion, type Variants } from "motion/react";
+import { motion, useReducedMotion, type Variants } from "motion/react";
 import type { ReactNode } from "react";
 
 // Line widths (%) of the illustrated page, grouped into four passages.
@@ -31,10 +31,13 @@ const fade: Variants = {
 
 export function PipelineFigure() {
   let line = 0;
+  // Reduced motion: show the finished figure straight away. initial={false} starts every
+  // element at its end state (MotionConfig alone would still play the fades and colors).
+  const still = Boolean(useReducedMotion());
 
   return (
     <figure aria-hidden="true" className="border border-rule bg-paper-deep/60 p-5 sm:p-6">
-      <motion.div initial="hidden" animate="shown" className="space-y-6">
+      <motion.div initial={still ? false : "hidden"} animate="shown" className="space-y-6">
         <Step number="01" label="extract & chunk">
           <div>
             {PASSAGES.map((widths, p) => (
@@ -44,7 +47,7 @@ export function PipelineFigure() {
                 // Passages start as one continuous column, then slide apart and get a margin
                 // mark. The gaps are always in the layout; the slide is a transform, so the
                 // figure's size never changes and nothing around it shifts.
-                initial={{ y: -10 * p, borderColor: "rgba(0,0,0,0)" }}
+                initial={still ? false : { y: -10 * p, borderColor: "rgba(0,0,0,0)" }}
                 animate={{ y: 0, borderColor: "var(--color-ink-faint)" }}
                 transition={{ delay: T.split + p * 0.12, duration: 0.5, ease: "easeInOut" }}
               >
@@ -60,7 +63,7 @@ export function PipelineFigure() {
                     key={i}
                     className="my-1.5 h-[5px] origin-left rounded-full bg-ink/25"
                     style={{ width: `${width}%` }}
-                    initial={{ scaleX: 0 }}
+                    initial={still ? false : { scaleX: 0 }}
                     animate={{ scaleX: 1 }}
                     transition={{ delay: T.lines + line++ * 0.04, duration: 0.35, ease: "easeOut" }}
                   />
@@ -76,11 +79,13 @@ export function PipelineFigure() {
               <motion.span
                 key={i}
                 className="h-3 flex-1"
-                initial={{ backgroundColor: "var(--color-rule)" }}
+                initial={still ? false : { backgroundColor: "var(--color-rule)" }}
                 animate={{
-                  backgroundColor: RETRIEVED.has(i)
-                    ? ["var(--color-rule)", "var(--color-ink)", "var(--color-mark)"]
-                    : ["var(--color-rule)", "var(--color-ink)", "var(--color-ink)"],
+                  backgroundColor: still
+                    ? `var(--color-${RETRIEVED.has(i) ? "mark" : "ink"})`
+                    : RETRIEVED.has(i)
+                      ? ["var(--color-rule)", "var(--color-ink)", "var(--color-mark)"]
+                      : ["var(--color-rule)", "var(--color-ink)", "var(--color-ink)"],
                 }}
                 transition={{
                   delay: T.strip + i * 0.04,
@@ -103,9 +108,9 @@ export function PipelineFigure() {
         <Step number="04" label="answer">
           <motion.p variants={fade} custom={T.answer} className="font-serif text-[15px] leading-relaxed">
             A randomised controlled trial
-            <Footnote n={1} delay={T.answer + 0.5} />, run across three sites over two years
-            <Footnote n={2} delay={T.answer + 0.65} />, with outcomes scored blind
-            <Footnote n={3} delay={T.answer + 0.8} />.
+            <Footnote n={1} delay={T.answer + 0.5} still={still} />, run across three sites over two years
+            <Footnote n={2} delay={T.answer + 0.65} still={still} />, with outcomes scored blind
+            <Footnote n={3} delay={T.answer + 0.8} still={still} />.
           </motion.p>
         </Step>
       </motion.div>
@@ -128,11 +133,11 @@ function Step({ number, label, children }: { number: string; label: string; chil
   );
 }
 
-function Footnote({ n, delay }: { n: number; delay: number }) {
+function Footnote({ n, delay, still }: { n: number; delay: number; still: boolean }) {
   return (
     <motion.sup
       className="ml-px font-mono text-[10px] text-mark"
-      initial={{ opacity: 0, y: -3 }}
+      initial={still ? false : { opacity: 0, y: -3 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, duration: 0.3 }}
     >
