@@ -1,14 +1,31 @@
 "use client";
 
 import { AnimatePresence } from "motion/react";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useDeleteDocument, useDocuments } from "@/lib/hooks/useDocuments";
 import { plural } from "@/lib/format";
+import type { DocumentListItem, DocumentStatus } from "@/lib/types";
+import { ChunkPanel } from "./ChunkPanel";
 import { DocumentRow } from "./DocumentRow";
 
 export function DocumentList() {
   const documents = useDocuments();
   const remove = useDeleteDocument();
+  const announcement = useStatusAnnouncements(documents.data);
+
+  // The open chunk panel, and the button that opened it (focus returns there on close).
+  const [openId, setOpenId] = useState<string | null>(null);
+  const trigger = useRef<HTMLElement | null>(null);
+  const openDocument = documents.data?.find((d) => d.id === openId && d.status === "ready");
+
+  function openPanel(document: DocumentListItem, element: HTMLElement) {
+    trigger.current = element;
+    setOpenId(document.id);
+  }
+  function closePanel() {
+    setOpenId(null);
+    trigger.current?.focus();
+  }
 
   if (documents.isPending) return <LoadingRows />;
 
@@ -33,6 +50,11 @@ export function DocumentList() {
 
   return (
     <section aria-label="Your documents">
+      {/* Screen readers hear when a document finishes; sighted users see the row change. */}
+      <p aria-live="polite" className="sr-only">
+        {announcement}
+      </p>
+
       {list.length > 0 && (
         <p className="font-mono text-xs text-ink-soft">
           {plural(list.length, "document")} · {plural(passages, "passage")} searchable
@@ -61,13 +83,41 @@ export function DocumentList() {
               slide up while it fades out, instead of waiting for it. */}
           <AnimatePresence mode="popLayout" initial={false}>
             {list.map((document) => (
-              <DocumentRow key={document.id} document={document} onDelete={(d) => remove.mutate(d)} />
+              <DocumentRow key={document.id} document={document} onDelete={(d) => remove.mutate(d)} onOpen={openPanel} />
             ))}
           </AnimatePresence>
         </ul>
       )}
+
+      <AnimatePresence>
+        {openDocument && <ChunkPanel key={openDocument.id} document={openDocument} onClose={closePanel} />}
+      </AnimatePresence>
     </section>
   );
+}
+
+// "notes.pdf is ready" when a processing document finishes (or fails) while you watch.
+function useStatusAnnouncements(list: DocumentListItem[] | undefined): string {
+  const previous = useRef<Map<string, DocumentStatus> | null>(null);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    if (!list) return;
+    const before = previous.current;
+    previous.current = new Map(list.map((d) => [d.id, d.status]));
+    if (!before) return; // first load: nothing has changed yet
+
+    const finished = list.filter((d) => before.get(d.id) === "processing" && d.status !== "processing");
+    if (finished.length > 0) {
+      setMessage(
+        finished
+          .map((d) => (d.status === "ready" ? `${d.filename} is ready.` : `${d.filename} failed: ${d.errorMessage ?? ""}`))
+          .join(" "),
+      );
+    }
+  }, [list]);
+
+  return message;
 }
 
 function LoadingRows() {

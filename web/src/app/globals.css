@@ -20,6 +20,18 @@
   --color-ready: #2f5d50;
   --color-ochre: #a87b12;
   --color-ochre-ink: #7a5a0d;
+
+  /* The chunk strip's "being embedded right now" ripple (animate-ripple). */
+  --animate-ripple: ripple 1.7s ease-in-out infinite;
+  @keyframes ripple {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.3;
+    }
+  }
 }
 
 /* next/font defines these variables on <html>; `inline` makes the utilities use the
