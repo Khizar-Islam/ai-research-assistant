@@ -20,16 +20,21 @@ export async function ingestDocument(
 ): Promise<void> {
   const startedAt = performance.now();
   try {
+    // stage starts as "extracting": the upload route sets it when it creates the row.
     const text = await extractText(buffer, kind);
+    await setProgress(documentId, { stage: "chunking" });
     const chunks = chunkText(text);
+    await setProgress(documentId, { stage: "embedding", chunksTotal: chunks.length, chunksEmbedded: 0 });
 
     // Embed everything before writing anything, so a document is never "ready" with
     // chunks that can't be searched. This is the slow step: ~100 chunks/minute on the
-    // free tier.
+    // free tier, which is why it reports progress after every batch.
     const vectors = await embedder.embedDocumentChunks(
       chunks.map((chunk) => chunk.content),
       titleFromFilename(filename),
+      (embeddedCount) => setProgress(documentId, { chunksEmbedded: embeddedCount }),
     );
+    await setProgress(documentId, { stage: "saving" });
 
     // Prisma can't write the `vector` column (it's Unsupported in the schema), so chunks
     // are inserted with raw SQL. unnest() turns parallel arrays into rows: one statement
@@ -54,13 +59,28 @@ export async function ingestDocument(
     await prisma.$transaction([
       prisma.chunk.deleteMany({ where: { documentId } }), // no-op normally; makes a retry safe
       ...inserts,
-      prisma.document.update({ where: { id: documentId }, data: { status: "ready", errorMessage: null } }),
+      prisma.document.update({ where: { id: documentId }, data: { status: "ready", stage: null, errorMessage: null } }),
     ]);
 
     const ms = Math.round(performance.now() - startedAt);
     console.log(`[ingest] ${documentId}: ready, ${chunks.length} chunks embedded in ${ms} ms`);
   } catch (error) {
     await markFailed(documentId, error);
+  }
+}
+
+// Progress is for display only, so writing it is best-effort: if the write fails the
+// error is logged and ingestion carries on (if the database is really down, the final
+// transaction fails and markFailed records that). updateMany, not update, for the same
+// reason as in markFailed: the document may have been deleted mid-processing.
+export type IngestStage = "extracting" | "chunking" | "embedding" | "saving";
+type Progress = { stage?: IngestStage; chunksTotal?: number; chunksEmbedded?: number };
+
+async function setProgress(documentId: string, progress: Progress): Promise<void> {
+  try {
+    await prisma.document.updateMany({ where: { id: documentId, status: "processing" }, data: progress });
+  } catch (error) {
+    console.error(`[ingest] ${documentId}: could not record progress`, error);
   }
 }
 

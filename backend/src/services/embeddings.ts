@@ -102,8 +102,13 @@ export function createEmbedder(deps: EmbedderDeps = {}) {
   }
 
   return {
-    // Returns one vector per chunk, in the same order.
-    async embedDocumentChunks(chunks: string[], title: string): Promise<number[][]> {
+    // Returns one vector per chunk, in the same order. onBatchDone (optional) is called
+    // after each batch with how many chunks are embedded so far, for progress display.
+    async embedDocumentChunks(
+      chunks: string[],
+      title: string,
+      onBatchDone?: (embeddedCount: number) => Promise<void> | void,
+    ): Promise<number[][]> {
       if (chunks.length > MAX_CHUNKS_PER_DOCUMENT) {
         throw new EmbeddingError(
           "too_large",
@@ -117,6 +122,7 @@ export function createEmbedder(deps: EmbedderDeps = {}) {
       // Sequential on purpose: parallel requests would only hit the per-minute quota sooner.
       for (const batch of inBatches(texts, DOCUMENT_BATCH_SIZE)) {
         vectors.push(...(await embedWithRetry(batch, DOCUMENT_POLICY, deadline)));
+        await onBatchDone?.(vectors.length);
       }
       return vectors;
     },

@@ -7,7 +7,7 @@ import { userIdOf } from "../lib/requestUser.ts";
 import { devUser } from "../middleware/devUser.ts";
 import { checkFileType, receiveUpload } from "../middleware/upload.ts";
 import { estimateTokens } from "../services/ingest/chunk.ts";
-import { ingestDocument } from "../services/ingest/pipeline.ts";
+import { ingestDocument, type IngestStage } from "../services/ingest/pipeline.ts";
 
 export const documentsRouter = Router();
 
@@ -20,6 +20,9 @@ const documentFields = {
   fileType: true,
   status: true,
   errorMessage: true,
+  stage: true,
+  chunksTotal: true,
+  chunksEmbedded: true,
   createdAt: true,
 } as const;
 
@@ -37,6 +40,7 @@ documentsRouter.post("/upload", receiveUpload, async (req, res) => {
       userId: userIdOf(req),
       filename: file.originalname.trim().slice(0, 255) || "untitled",
       fileType: check.kind,
+      stage: "extracting" satisfies IngestStage, // so the first poll already shows a stage
     },
     select: documentFields,
   });

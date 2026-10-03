@@ -92,6 +92,34 @@ describe("embedDocumentChunks", () => {
     assert.deepEqual(vectors.map((v) => v[0]), Array.from({ length: 250 }, (_, i) => i));
   });
 
+  it("reports progress after each batch, only once that batch has succeeded", async () => {
+    const progress: number[] = [];
+    // Batch 2 fails once with a 500 and is retried: progress must not count it twice.
+    const api = fakeApi((call) => (call === 2 ? apiError(500) : undefined));
+    await createEmbedder({ embedBatch: api.embedBatch, ...fakeTime() }).embedDocumentChunks(
+      chunks(250),
+      "Doc",
+      (count) => void progress.push(count),
+    );
+
+    assert.deepEqual(progress, [90, 180, 250]);
+  });
+
+  it("waits for an async progress callback before starting the next batch", async () => {
+    const events: string[] = [];
+    const api = fakeApi();
+    const embedBatch: EmbedBatch = async (texts) => {
+      events.push(`embed ${texts.length}`);
+      return api.embedBatch(texts);
+    };
+    await createEmbedder({ embedBatch }).embedDocumentChunks(chunks(100), "Doc", async (count) => {
+      await new Promise((resolve) => setImmediate(resolve));
+      events.push(`progress ${count}`);
+    });
+
+    assert.deepEqual(events, ["embed 90", "progress 90", "embed 10", "progress 100"]);
+  });
+
   it(`rejects documents over ${MAX_CHUNKS_PER_DOCUMENT} chunks without calling the API`, async () => {
     const api = fakeApi();
     const embedder = createEmbedder({ embedBatch: api.embedBatch });

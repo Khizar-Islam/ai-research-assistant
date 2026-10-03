@@ -33,7 +33,13 @@ model Document {
   fileType  String // "pdf" | "text" | "url"
   status       String   @default("processing") // "processing" | "ready" | "failed"
   errorMessage String? // why processing failed (only set when status = "failed")
-  createdAt    DateTime @default(now())
+  // Live progress while status = "processing", polled by the dashboard.
+  // stage: "extracting" | "chunking" | "embedding" | "saving". Kept after a failure,
+  // so the UI can say which stage failed.
+  stage          String?
+  chunksTotal    Int? // set once chunking finishes
+  chunksEmbedded Int      @default(0)
+  createdAt      DateTime @default(now())
 
   chunks Chunk[]
 }
