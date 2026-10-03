@@ -7,6 +7,8 @@
 //     progress updates); the rest wait in rule grey.
 //   - "static": a finished document's passages.
 //   - with `highlight` / `onCellClick`: the chunk panel's minimap.
+//   - `muted` with `highlight`: an answer's footnote, where the point is *where* the cited
+//     passage sits, so the other passages recede and the red one stands out.
 // Big documents would make 1-chunk cells sub-pixel, so above `maxCells` each cell stands
 // for a few consecutive chunks.
 import { EMBED_BATCH_SIZE } from "@/lib/pipeline";
@@ -17,12 +19,13 @@ type Props = {
   highlight?: ReadonlySet<number>; // chunk indices to mark in red
   onCellClick?: (firstChunkIndex: number) => void;
   maxCells?: number;
+  muted?: boolean;
   className?: string;
 };
 
 type CellState = "done" | "working" | "waiting";
 
-export function ChunkStrip({ total, embedded, highlight, onCellClick, maxCells = 96, className = "h-2" }: Props) {
+export function ChunkStrip({ total, embedded, highlight, onCellClick, maxCells = 96, muted = false, className = "h-2" }: Props) {
   const cells = Math.max(1, Math.min(total, maxCells));
   const perCell = total / cells;
   const inProgress = embedded !== undefined;
@@ -35,7 +38,8 @@ export function ChunkStrip({ total, embedded, highlight, onCellClick, maxCells =
         const end = Math.max(first + 1, Math.floor((i + 1) * perCell)); // exclusive
         const state: CellState = !inProgress || end <= embedded ? "done" : first < workingUntil ? "working" : "waiting";
         const marked = highlight ? rangeHits(highlight, first, end) : false;
-        const color = marked ? "bg-mark" : state === "done" ? "bg-ink" : state === "working" ? "bg-ochre" : "bg-rule";
+        const done = muted ? "bg-ink/20" : "bg-ink";
+        const color = marked ? "bg-mark" : state === "done" ? done : state === "working" ? "bg-ochre" : "bg-rule";
         const style = {
           // When a batch lands its cells turn ink left to right, a short sweep instead of a jump.
           transitionDelay: inProgress ? `${Math.min(i * 10, 600)}ms` : undefined,

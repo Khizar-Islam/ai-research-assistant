@@ -9,6 +9,7 @@
 // piece, fades in.
 import { motion } from "motion/react";
 import { Fragment, type ReactNode } from "react";
+import { citationKey, useCitations } from "./CitationContext";
 import type { EntryCitation } from "./types";
 
 // The backend's marker syntax (citations.ts): [1]  [1, 2]  [1,2,3]; [1][3] is two groups.
@@ -65,18 +66,46 @@ export function AnswerText({ entryId, text, citations, fadeFrom, trailing }: Pro
   );
 }
 
+// Pointing at a marker (hover or keyboard focus) lights up its footnote, and the other
+// way round. Clicking opens the cited passage; a source whose document was deleted can't
+// be opened, so its marker jumps to the footnote (and its saved excerpt) instead.
 function Marker({ entryId, citation, separator }: { entryId: string; citation: EntryCitation; separator: boolean }) {
+  const { active, setActive, openPassage, canOpen } = useCitations();
+  const key = citationKey(entryId, citation.marker);
   const gone = citation.available === false;
+  const pointing = {
+    onMouseEnter: () => setActive(key),
+    onMouseLeave: () => setActive(null),
+    onFocus: () => setActive(key),
+    onBlur: () => setActive(null),
+  };
+  const className = `ml-px px-0.5 transition-colors ${gone ? "text-ink-faint" : "text-mark"} ${
+    active === key ? (gone ? "bg-ink/10" : "bg-mark/15") : ""
+  }`;
+
   return (
     <sup className="font-mono text-[11px] leading-none">
       {separator && <span className="text-ink-faint">,</span>}
-      <a
-        href={`#${footnoteId(entryId, citation.marker)}`}
-        aria-label={`Source ${citation.marker}: ${citation.filename}${gone ? " (deleted)" : ""}`}
-        className={`ml-px px-px no-underline hover:underline ${gone ? "text-ink-faint" : "text-mark"}`}
-      >
-        {citation.marker}
-      </a>
+      {canOpen(citation) ? (
+        <button
+          type="button"
+          {...pointing}
+          onClick={(event) => openPassage(citation, event.currentTarget)}
+          aria-label={`Source ${citation.marker}: ${citation.filename}, passage ${citation.chunkIndex + 1}. Open passage`}
+          className={`${className} cursor-pointer`}
+        >
+          {citation.marker}
+        </button>
+      ) : (
+        <a
+          href={`#${footnoteId(entryId, citation.marker)}`}
+          {...pointing}
+          aria-label={`Source ${citation.marker}: ${citation.filename}${gone ? " (deleted)" : ""}`}
+          className={`${className} no-underline`}
+        >
+          {citation.marker}
+        </a>
+      )}
     </sup>
   );
 }

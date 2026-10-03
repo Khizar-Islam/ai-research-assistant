@@ -2,7 +2,8 @@
 
 // Side panel listing a ready document's passages, exactly as they were indexed. The
 // chunk strip at the top is a minimap: the passages on screen are marked in red, and
-// clicking a cell jumps to that passage.
+// clicking a cell jumps to that passage. Opened from an answer's citation, it starts at
+// the cited passage (`focusChunkIndex`) and marks it.
 import { motion } from "motion/react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useDocumentChunks } from "@/lib/hooks/useDocuments";
@@ -10,9 +11,13 @@ import { plural } from "@/lib/format";
 import type { DocumentListItem } from "@/lib/types";
 import { ChunkStrip } from "./ChunkStrip";
 
-type Props = { document: DocumentListItem; onClose: () => void };
+type Props = {
+  document: DocumentListItem;
+  onClose: () => void;
+  focusChunkIndex?: number; // the passage an answer cited
+};
 
-export function ChunkPanel({ document, onClose }: Props) {
+export function ChunkPanel({ document, onClose, focusChunkIndex }: Props) {
   const chunks = useDocumentChunks(document.id);
   const closeRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -50,6 +55,14 @@ export function ChunkPanel({ document, onClose }: Props) {
     root.querySelectorAll("article[data-index]").forEach((element) => observer.observe(element));
     return () => observer.disconnect();
   }, [list]);
+
+  // Opened from a citation: go straight to the cited passage once the passages are in.
+  // Instant, not animated: the panel is still sliding in, and the reader asked for this
+  // passage, not a tour of the ones before it.
+  useEffect(() => {
+    if (!list || focusChunkIndex === undefined) return;
+    scrollRef.current?.querySelector(`[data-index="${focusChunkIndex}"]`)?.scrollIntoView({ block: "start" });
+  }, [list, focusChunkIndex]);
 
   function jumpTo(index: number) {
     // A jump can cover tens of thousands of pixels: animate it, unless the OS asks for
@@ -158,11 +171,15 @@ export function ChunkPanel({ document, onClose }: Props) {
             <article
               key={chunk.id}
               data-index={chunk.chunkIndex}
-              className="scroll-mt-2 border-b border-rule py-5 last:border-b-0"
+              aria-current={chunk.chunkIndex === focusChunkIndex ? "true" : undefined}
+              className={`scroll-mt-2 border-b border-rule py-5 last:border-b-0 ${
+                chunk.chunkIndex === focusChunkIndex ? "-mx-3 border-l-2 border-l-mark bg-mark/5 px-3" : ""
+              }`}
             >
               <p className="font-mono text-[11px] text-ink-soft">
                 <span className="text-mark">§{chunk.chunkIndex + 1}</span> · ~{chunk.tokenEstimate} tokens ·{" "}
                 {chunk.charCount.toLocaleString("en-US")} characters
+                {chunk.chunkIndex === focusChunkIndex && <span className="text-mark"> · cited in the answer</span>}
               </p>
               <p className="mt-2 text-sm leading-relaxed whitespace-pre-wrap">{chunk.content}</p>
             </article>
