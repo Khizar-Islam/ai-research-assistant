@@ -13,6 +13,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:status": "prisma migrate status",
     "auth:token": "tsx scripts/mint-token.ts",
+    "claim-dev-data": "tsx scripts/claim-dev-data.ts",
     "postinstall": "prisma generate"
   },
   "keywords": [],
