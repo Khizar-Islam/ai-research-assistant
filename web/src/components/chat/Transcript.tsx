@@ -5,10 +5,20 @@
 import Link from "next/link";
 import { plural } from "@/lib/format";
 import { useDocuments } from "@/lib/hooks/useDocuments";
+import type { AnswerExtras, LiveAnswer } from "@/lib/hooks/useAsk";
 import { HISTORY_LIMIT, useQueryHistory } from "@/lib/hooks/useQueries";
 import { Entry } from "./Entry";
+import { LiveEntry } from "./LiveEntry";
 
-export function Transcript() {
+type Props = {
+  live: LiveAnswer | null;
+  extras: ReadonlyMap<string, AnswerExtras>; // retrieval info for answers given on this page
+  justAnswered: string | null;
+  onRetry: () => void;
+  onDismiss: () => void;
+};
+
+export function Transcript({ live, extras, justAnswered, onRetry, onDismiss }: Props) {
   const history = useQueryHistory();
 
   if (history.isPending) return <LoadingEntries />;
@@ -28,7 +38,7 @@ export function Transcript() {
 
   return (
     <section aria-label="Questions and answers">
-      {entries.length === 0 ? (
+      {entries.length === 0 && !live ? (
         <div className="py-10">
           <p className="font-serif text-2xl">No questions yet.</p>
           <p className="mt-2 text-ink-soft">Ask something below. Answers come only from your documents.</p>
@@ -39,10 +49,11 @@ export function Transcript() {
             <p className="pb-4 font-mono text-[11px] text-ink-soft">Showing your last {HISTORY_LIMIT} questions.</p>
           )}
           {entries.map((query) => (
-            <Entry key={query.id} entry={query} />
+            <Entry key={query.id} entry={{ ...query, ...extras.get(query.id) }} revealFootnotes={query.id === justAnswered} />
           ))}
         </>
       )}
+      {live && <LiveEntry live={live} onRetry={onRetry} onDismiss={onDismiss} />}
     </section>
   );
 }

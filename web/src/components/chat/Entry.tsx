@@ -1,4 +1,7 @@
+"use client";
+
 // One question and its answer in the transcript.
+import { motion } from "motion/react";
 import { formatUploadedAt } from "@/lib/format";
 import type { RetrievalInfo } from "@/lib/types";
 import Link from "next/link";
@@ -6,13 +9,23 @@ import { AnswerText } from "./AnswerText";
 import { Footnotes } from "./Footnotes";
 import type { TranscriptEntry } from "./types";
 
-export function Entry({ entry }: { entry: TranscriptEntry }) {
+export function QuestionHeading({ id, question, time }: { id: string; question: string; time: string }) {
+  return (
+    <>
+      <p className="font-mono text-[11px] text-ink-soft">{time}</p>
+      <h2 id={id} className="mt-1 font-serif text-2xl leading-snug italic">
+        {question}
+      </h2>
+    </>
+  );
+}
+
+// `revealFootnotes`: the answer just finished on this page, so its sources slide in after
+// the text instead of appearing with it.
+export function Entry({ entry, revealFootnotes = false }: { entry: TranscriptEntry; revealFootnotes?: boolean }) {
   return (
     <article aria-labelledby={`${entry.id}-question`} className="border-t border-rule py-8 first:border-t-0">
-      <p className="font-mono text-[11px] text-ink-soft">{formatUploadedAt(entry.createdAt)}</p>
-      <h2 id={`${entry.id}-question`} className="mt-1 font-serif text-2xl leading-snug italic">
-        {entry.question}
-      </h2>
+      <QuestionHeading id={`${entry.id}-question`} question={entry.question} time={formatUploadedAt(entry.createdAt)} />
 
       <div className="mt-4">
         {entry.answered ? (
@@ -21,7 +34,15 @@ export function Entry({ entry }: { entry: TranscriptEntry }) {
             {entry.truncated && (
               <p className="mt-2 font-mono text-[11px] text-ochre-ink">Cut off at the length limit.</p>
             )}
-            {entry.citations.length > 0 && <Footnotes entryId={entry.id} citations={entry.citations} />}
+            {entry.citations.length > 0 && (
+              <motion.div
+                initial={revealFootnotes ? { opacity: 0, y: 8 } : false}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.45, delay: 0.15, ease: "easeOut" }}
+              >
+                <Footnotes entryId={entry.id} citations={entry.citations} />
+              </motion.div>
+            )}
           </>
         ) : (
           <NotAnswered text={entry.answer} retrieval={entry.retrieval} />
