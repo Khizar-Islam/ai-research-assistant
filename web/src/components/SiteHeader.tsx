@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { DEV_USER_EMAIL, PRODUCT_NAME } from "@/lib/config";
+import { PRODUCT_NAME } from "@/lib/config";
+import { UserMenu } from "./UserMenu";
 
 const NAV = [
   { href: "/dashboard", label: "Documents" },
@@ -14,13 +15,13 @@ export function SiteHeader() {
 
   return (
     <header className="border-b border-rule">
-      <div className="mx-auto flex h-16 max-w-5xl items-center gap-8 px-5 sm:px-8">
+      <div className="mx-auto flex h-16 max-w-5xl items-center gap-4 px-5 sm:gap-8 sm:px-8">
         <Link href="/" className="font-serif text-2xl tracking-tight">
           {PRODUCT_NAME}
           <sup className="ml-0.5 font-mono text-xs text-mark">1</sup>
         </Link>
 
-        <nav aria-label="Main" className="flex gap-6 text-sm">
+        <nav aria-label="Main" className="flex gap-3 text-sm sm:gap-6">
           {NAV.map(({ href, label }) => {
             const active = pathname.startsWith(href);
             return (
@@ -36,14 +37,7 @@ export function SiteHeader() {
           })}
         </nav>
 
-        {/* Step 8: replaced by the signed-in user and a sign-out button. Until then every
-            request runs as one fixed development user, and the UI says so. */}
-        <p
-          className="ml-auto hidden border border-rule px-2 py-1 font-mono text-[11px] text-ink-soft sm:block"
-          title="No sign-in yet: every request runs as one development user"
-        >
-          dev mode · {DEV_USER_EMAIL}
-        </p>
+        <UserMenu />
       </div>
     </header>
   );

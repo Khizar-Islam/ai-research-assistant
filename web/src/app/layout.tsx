@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans, Newsreader } from "next/font/google";
+import { auth } from "@/auth";
 import { SiteHeader } from "@/components/SiteHeader";
 import { PRODUCT_NAME } from "@/lib/config";
 import { Providers } from "./providers";
@@ -21,11 +22,15 @@ export const metadata: Metadata = {
   description: "Ask questions about your own documents and get answers that cite their sources.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  // Read on the server for every render, so the header knows who's signed in on first
+  // paint, including right after an in-app sign-in (which doesn't reload the page).
+  const session = await auth();
+
   return (
     <html lang="en" className={`${newsreader.variable} ${plexSans.variable} ${plexMono.variable}`}>
       <body className="min-h-dvh bg-paper font-sans text-ink">
-        <Providers>
+        <Providers session={session}>
           <SiteHeader />
           {children}
         </Providers>

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { auth, DEV_TESTER, devLoginEnabled, googleEnabled, signIn } from "@/auth";
+import { auth, DEV_TESTERS, devLoginEnabled, googleEnabled, signIn } from "@/auth";
 import { PRODUCT_NAME } from "@/lib/config";
 
 export const metadata: Metadata = { title: "Sign in" };
@@ -67,23 +67,27 @@ export default async function SignInPage({ searchParams }: Props) {
         )}
 
         {devLoginEnabled && (
-          <form
-            action={async () => {
-              "use server";
-              await signIn("dev", { redirectTo: destination });
-            }}
-            className="border-t border-dashed border-ink-faint pt-3"
-          >
-            <button
-              type="submit"
-              className="w-full border border-ink px-5 py-3 text-sm font-medium transition-colors hover:border-mark hover:text-mark"
-            >
-              Continue as {DEV_TESTER.name}
-            </button>
-            <p className="mt-2 font-mono text-[11px] text-ink-soft">
-              Development only · signs in as {DEV_TESTER.email}, no password
+          <div className="space-y-2 border-t border-dashed border-ink-faint pt-3">
+            {DEV_TESTERS.map((tester) => (
+              <form
+                key={tester.key}
+                action={async () => {
+                  "use server";
+                  await signIn("dev", { tester: tester.key, redirectTo: destination });
+                }}
+              >
+                <button
+                  type="submit"
+                  className="w-full border border-ink px-5 py-3 text-sm font-medium transition-colors hover:border-mark hover:text-mark"
+                >
+                  Continue as {tester.name}
+                </button>
+              </form>
+            ))}
+            <p className="font-mono text-[11px] text-ink-soft">
+              Development only · fixed test users ({DEV_TESTERS.map((t) => t.email).join(", ")}), no password
             </p>
-          </form>
+          </div>
         )}
       </div>
     </main>

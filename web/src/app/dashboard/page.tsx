@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
+import { requireSession } from "@/lib/server/session";
 import { DocumentList } from "@/components/documents/DocumentList";
 import { DocumentUpload } from "@/components/upload/DocumentUpload";
 
 export const metadata: Metadata = { title: "Documents" };
 
-// Step 8: redirect to sign-in when there's no session.
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  await requireSession("/dashboard"); // signed out → sign in, then back here
   return (
     <main className="mx-auto max-w-5xl px-5 py-12 sm:px-8">
       <h1 className="font-serif text-4xl tracking-tight">Documents</h1>

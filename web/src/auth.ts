@@ -4,15 +4,20 @@
 //
 // Sign-in methods:
 //   - Google, when AUTH_GOOGLE_ID and AUTH_GOOGLE_SECRET are set.
-//   - "Dev Tester", a development-only sign-in as one fixed test user, when
-//     AUTH_DEV_LOGIN=true and NODE_ENV=development. The API refuses its identity anywhere
-//     else too (see backend requireAuth).
+//   - Development-only sign-in as one of two fixed test users (two, so per-user data
+//     separation can be tested), when AUTH_DEV_LOGIN=true and NODE_ENV=development. The
+//     API refuses these identities anywhere else too (see backend requireAuth).
 import NextAuth from "next-auth";
 import type { Provider } from "next-auth/providers";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 
-export const DEV_TESTER = { email: "dev-tester@footnote.test", name: "Dev Tester" } as const;
+// The only identities the dev sign-in can produce. The form picks one by key; anything
+// else falls back to the first, so no other identity can be made up.
+export const DEV_TESTERS = [
+  { key: "tester", email: "dev-tester@footnote.test", name: "Dev Tester" },
+  { key: "second", email: "second-tester@footnote.test", name: "Second Tester" },
+] as const;
 
 const devLoginRequested = process.env.AUTH_DEV_LOGIN === "true";
 if (devLoginRequested && process.env.NODE_ENV === "production") {
@@ -28,9 +33,12 @@ if (devLoginEnabled) {
   providers.push(
     Credentials({
       id: "dev",
-      name: "Dev Tester",
-      credentials: {}, // nothing to enter: it always signs in as the one test user
-      authorize: async () => ({ id: `dev:${DEV_TESTER.email}`, ...DEV_TESTER }),
+      name: "Dev tester",
+      credentials: { tester: {} }, // which fixed tester; no password
+      authorize: async (credentials) => {
+        const tester = DEV_TESTERS.find((t) => t.key === credentials?.tester) ?? DEV_TESTERS[0];
+        return { id: `dev:${tester.email}`, email: tester.email, name: tester.name };
+      },
     }),
   );
 }

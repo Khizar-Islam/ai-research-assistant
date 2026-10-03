@@ -1,5 +1,7 @@
 // The only place the frontend talks to the Express API. Every request goes through
-// apiFetch, so cross-cutting concerns (base URL, errors, and auth in Step 8) live here once.
+// request(), so cross-cutting concerns (base URL, errors, the signed-in user's token)
+// live here once.
+import { getApiToken } from "./apiTokenClient";
 import { API_URL } from "./config";
 import type { DocumentListItem, DocumentSummary, DocumentWithChunks, HistoryQuery } from "./types";
 
@@ -15,17 +17,28 @@ export class ApiError extends Error {
   }
 }
 
-// Sends a request; returns the response if it succeeded, throws ApiError otherwise.
+// Sends a request as the signed-in user; returns the response if it succeeded, throws
+// ApiError otherwise.
+//
+// A 401 means the token was refused (normally: it expired since it was cached). The token
+// is fetched fresh and the request retried once.
+//   - No fresh token: nobody is signed in any more → off to sign in, then back here.
+//   - A fresh token that's refused too: the user IS signed in, but the API won't accept
+//     their tokens (e.g. API_JWT_SECRET differs between web and API). Sending them to sign
+//     in would loop forever (sign-in sends signed-in users straight back), so it's
+//     reported as an error on the page instead.
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
-  // Step 8: attach the signed-in user's credentials here.
-  let response: Response;
-  try {
-    response = await fetch(`${API_URL}${path}`, init);
-  } catch (error) {
-    // fetch only rejects when no HTTP response arrived at all. A cancelled request
-    // (TanStack Query aborts outdated ones) is passed through untouched.
-    if (isAbort(error)) throw error;
-    throw new ApiError(0, `Can't reach the server at ${API_URL}. Is the backend running?`);
+  let response = await send(path, init, await getApiToken());
+  if (response.status === 401) {
+    const fresh = await getApiToken({ forceRefresh: true });
+    if (!fresh) {
+      goToSignIn();
+      throw new ApiError(401, "You're signed out. Sign in to continue.");
+    }
+    response = await send(path, init, fresh);
+    if (response.status === 401) {
+      throw new ApiError(401, "The server didn't accept your sign-in. Try signing out and in again; if it keeps happening, the app's auth settings are out of sync.");
+    }
   }
   if (response.ok) return response;
 
@@ -37,6 +50,32 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
       ? body.error
       : `Request failed (${response.status})`;
   throw new ApiError(response.status, message);
+}
+
+async function send(path: string, init: RequestInit, token: string | null): Promise<Response> {
+  const headers = new Headers(init.headers);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  try {
+    return await fetch(`${API_URL}${path}`, { ...init, headers });
+  } catch (error) {
+    // fetch only rejects when no HTTP response arrived at all. A cancelled request
+    // (TanStack Query aborts outdated ones) is passed through untouched.
+    if (isAbort(error)) throw error;
+    throw new ApiError(0, `Can't reach the server at ${API_URL}. Is the backend running?`);
+  }
+}
+
+// Off to sign in, coming back to this page afterwards. Guarded so a burst of parallel
+// 401s navigates once.
+let redirecting = false;
+function goToSignIn() {
+  if (redirecting || typeof window === "undefined") return;
+  redirecting = true;
+  const here = window.location.pathname + window.location.search;
+  // A full page load on purpose (not router.push, which this plain module doesn't have
+  // anyway): it also drops the in-memory token and every cached query of the old session.
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+  window.location.assign(`/signin?callbackUrl=${encodeURIComponent(here)}`);
 }
 
 async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {

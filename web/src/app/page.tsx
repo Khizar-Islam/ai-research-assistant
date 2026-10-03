@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { auth } from "@/auth";
 import { PipelineFigure } from "@/components/landing/PipelineFigure";
 import { PRODUCT_NAME } from "@/lib/config";
 
@@ -26,7 +27,9 @@ const STEPS = [
   },
 ];
 
-export default function Home() {
+export default async function Home() {
+  const signedIn = Boolean((await auth())?.user);
+
   return (
     <main className="mx-auto max-w-5xl px-5 sm:px-8">
       <section className="grid items-center gap-12 py-16 sm:py-24 lg:grid-cols-[1.05fr_1fr] lg:gap-16">
@@ -45,10 +48,10 @@ export default function Home() {
           </p>
           <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-3">
             <Link
-              href="/dashboard"
+              href={signedIn ? "/dashboard" : "/signin?callbackUrl=%2Fdashboard"}
               className="bg-ink px-5 py-3 text-sm font-medium text-paper transition-colors hover:bg-mark"
             >
-              Open your documents <span aria-hidden="true">→</span>
+              {signedIn ? "Open your documents" : "Sign in to start"} <span aria-hidden="true">→</span>
             </Link>
             <p className="font-mono text-xs text-ink-soft">.pdf · .txt · .md, up to 10 MB</p>
           </div>

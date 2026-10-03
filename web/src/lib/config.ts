@@ -9,6 +9,3 @@ if (!rawApiUrl) {
 }
 
 export const API_URL = rawApiUrl.replace(/\/+$/, ""); // tolerate a trailing slash
-
-// Step 8: replaced by the signed-in user's email from NextAuth.
-export const DEV_USER_EMAIL = "dev@localhost";
