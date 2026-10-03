@@ -35,6 +35,9 @@
     background: var(--color-paper);
     color: var(--color-ink);
     -webkit-font-smoothing: antialiased;
+    /* Always reserve the scrollbar's space, so the page doesn't jump sideways when a
+       list grows or shrinks past one screen and the scrollbar appears or disappears. */
+    scrollbar-gutter: stable;
   }
 
   ::selection {
