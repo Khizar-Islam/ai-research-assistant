@@ -5,12 +5,19 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "../../lib/prisma.ts";
 import { embedder, EmbeddingError, inBatches, titleFromFilename } from "../embeddings.ts";
-import { chunkText } from "./chunk.ts";
+import { chunkText, type TextChunk } from "./chunk.ts";
 import { ExtractionError, extractText, type FileKind } from "./extract.ts";
 
 // Rows per INSERT. 100 chunks × 768 numbers keeps each statement around 1.5 MB, instead
 // of one ~15 MB statement for a 1,000-chunk document.
 const INSERT_BATCH_SIZE = 100;
+
+// The save transaction normally takes 1–2 s (1,000 chunks ≈ 15 MB to Supabase). Prisma's
+// default limit is 5 s, and one network stall on 2026-10-03 hit it (44 s) after minutes
+// of embedding work. 30 s rides out a hiccup; maxWait is how long to wait for a free
+// connection from the pool before starting.
+const SAVE_TX_OPTIONS = { maxWait: 10_000, timeout: 30_000 };
+const SLOW_SAVE_MS = 5_000;
 
 export async function ingestDocument(
   documentId: string,
@@ -35,38 +42,87 @@ export async function ingestDocument(
       (embeddedCount) => setProgress(documentId, { chunksEmbedded: embeddedCount }),
     );
     await setProgress(documentId, { stage: "saving" });
-
-    // Prisma can't write the `vector` column (it's Unsupported in the schema), so chunks
-    // are inserted with raw SQL. unnest() turns parallel arrays into rows: one statement
-    // per batch instead of one per chunk. Chunk ids come from here, not the database:
-    // Prisma's @default(uuid()) is filled in by Prisma's client, not by Postgres.
-    const inserts = inBatches(chunks, INSERT_BATCH_SIZE).map((batch) => {
-      const ids = batch.map(() => randomUUID());
-      const contents = batch.map((chunk) => chunk.content);
-      const indices = batch.map((chunk) => chunk.chunkIndex);
-      // "[0.1,0.2,...]" is pgvector's text format; ::vector parses it.
-      const embeddings = batch.map((chunk) => JSON.stringify(vectors[chunk.chunkIndex]));
-      return prisma.$executeRaw`
-        INSERT INTO "Chunk" ("id", "documentId", "content", "chunkIndex", "embedding")
-        SELECT t.id, ${documentId}, t.content, t.chunk_index, t.embedding::vector
-        FROM unnest(${ids}::text[], ${contents}::text[], ${indices}::int[], ${embeddings}::text[])
-          AS t(id, content, chunk_index, embedding)
-      `;
-    });
-
-    // All-or-nothing: every chunk, its vector and the "ready" status land together, or
-    // nothing does.
-    await prisma.$transaction([
-      prisma.chunk.deleteMany({ where: { documentId } }), // no-op normally; makes a retry safe
-      ...inserts,
-      prisma.document.update({ where: { id: documentId }, data: { status: "ready", stage: null, errorMessage: null } }),
-    ]);
+    const save = await saveChunks(documentId, chunks, vectors);
 
     const ms = Math.round(performance.now() - startedAt);
-    console.log(`[ingest] ${documentId}: ready, ${chunks.length} chunks embedded in ${ms} ms`);
+    console.log(`[ingest] ${documentId}: ready, ${chunks.length} chunks embedded in ${ms} ms (save ${save.totalMs} ms)`);
+    if (save.totalMs > SLOW_SAVE_MS) {
+      // Succeeded, but slow enough to be worth seeing before it ever becomes a timeout.
+      console.warn(`[ingest] ${documentId}: slow save, ${save.steps.join(", ")}`);
+    }
   } catch (error) {
     await markFailed(documentId, error);
   }
+}
+
+// Writes every chunk, its vector and the "ready" status in one transaction: all of it
+// lands, or none of it does. Each statement is timed, so if the transaction ever stalls
+// the log says which statement was still running and for how long. (Otherwise Prisma
+// reports only "transaction expired", which hides where the time went.)
+async function saveChunks(
+  documentId: string,
+  chunks: TextChunk[],
+  vectors: number[][],
+): Promise<{ totalMs: number; steps: string[] }> {
+  const startedAt = performance.now();
+  const steps: string[] = [];
+  let inFlight: { name: string; startedAt: number } | undefined = { name: "waiting for a connection", startedAt };
+
+  async function step<T>(name: string, run: () => Promise<T>): Promise<T> {
+    if (inFlight) steps.push(`${inFlight.name} ${elapsed(inFlight.startedAt)} ms`); // the connection wait
+    inFlight = { name, startedAt: performance.now() };
+    const result = await run();
+    steps.push(`${name} ${elapsed(inFlight.startedAt)} ms`);
+    inFlight = undefined;
+    return result;
+  }
+
+  const batches = inBatches(chunks, INSERT_BATCH_SIZE);
+  try {
+    await prisma.$transaction(async (tx) => {
+      // No-op normally; makes a retry of the same document safe.
+      await step("delete old chunks", () => tx.chunk.deleteMany({ where: { documentId } }));
+
+      // Prisma can't write the `vector` column (it's Unsupported in the schema), so chunks
+      // are inserted with raw SQL. unnest() turns parallel arrays into rows: one statement
+      // per batch instead of one per chunk. Chunk ids come from here, not the database:
+      // Prisma's @default(uuid()) is filled in by Prisma's client, not by Postgres.
+      for (const [i, batch] of batches.entries()) {
+        const ids = batch.map(() => randomUUID());
+        const contents = batch.map((chunk) => chunk.content);
+        const indices = batch.map((chunk) => chunk.chunkIndex);
+        // "[0.1,0.2,...]" is pgvector's text format; ::vector parses it.
+        const embeddings = batch.map((chunk) => JSON.stringify(vectors[chunk.chunkIndex]));
+        await step(
+          `insert batch ${i + 1}/${batches.length} (${batch.length} chunks)`,
+          () => tx.$executeRaw`
+            INSERT INTO "Chunk" ("id", "documentId", "content", "chunkIndex", "embedding")
+            SELECT t.id, ${documentId}, t.content, t.chunk_index, t.embedding::vector
+            FROM unnest(${ids}::text[], ${contents}::text[], ${indices}::int[], ${embeddings}::text[])
+              AS t(id, content, chunk_index, embedding)
+          `,
+        );
+      }
+
+      await step("mark ready", () =>
+        tx.document.update({ where: { id: documentId }, data: { status: "ready", stage: null, errorMessage: null } }),
+      );
+      inFlight = { name: "commit", startedAt: performance.now() };
+    }, SAVE_TX_OPTIONS);
+  } catch (error) {
+    const running = inFlight ? `; still running: ${inFlight.name} (${elapsed(inFlight.startedAt)} ms)` : "";
+    console.error(
+      `[ingest] ${documentId}: save transaction failed after ${elapsed(startedAt)} ms ` +
+        `(limit ${SAVE_TX_OPTIONS.timeout} ms); finished: ${steps.join(", ") || "nothing"}${running}`,
+    );
+    throw error; // markFailed logs the error itself and records the failure
+  }
+
+  return { totalMs: elapsed(startedAt), steps };
+}
+
+function elapsed(since: number): number {
+  return Math.round(performance.now() - since);
 }
 
 // Progress is for display only, so writing it is best-effort: if the write fails the
