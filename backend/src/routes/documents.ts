@@ -4,14 +4,14 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma.ts";
 import { userIdOf } from "../lib/requestUser.ts";
-import { devUser } from "../middleware/devUser.ts";
+import { requireAuth } from "../middleware/auth.ts";
 import { checkFileType, receiveUpload } from "../middleware/upload.ts";
 import { estimateTokens } from "../services/ingest/chunk.ts";
 import { ingestDocument, type IngestStage } from "../services/ingest/pipeline.ts";
 
 export const documentsRouter = Router();
 
-documentsRouter.use(devUser); // replaced by real auth in Step 8
+documentsRouter.use(requireAuth);
 
 // Fields returned for a document everywhere (never the user id).
 const documentFields = {

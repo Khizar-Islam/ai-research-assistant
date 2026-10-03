@@ -12,6 +12,7 @@
     "db:generate": "prisma generate",
     "db:deploy": "prisma migrate deploy",
     "db:status": "prisma migrate status",
+    "auth:token": "tsx scripts/mint-token.ts",
     "postinstall": "prisma generate"
   },
   "keywords": [],
@@ -24,6 +25,7 @@
     "cors": "^2.8.6",
     "dotenv": "^18.0.5",
     "express": "^5.2.1",
+    "jose": "^6.2.12",
     "multer": "^2.4.0",
     "pdf-parse": "^2.4.5",
     "pg": "^8.23.1",

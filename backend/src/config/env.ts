@@ -32,6 +32,11 @@ const EnvSchema = z.object({
     .regex(/^gemini-[\w.-]+$/, 'must be a Gemini model id like "gemini-3.5-flash-lite"')
     .default("gemini-3.5-flash-lite"),
 
+  // Verifies the short-lived API tokens the Next.js app signs for signed-in users (see
+  // middleware/requireAuth.ts). Shared with web/.env.local. 32+ characters: HS256 is only
+  // as strong as its secret.
+  API_JWT_SECRET: z.string().min(32, "must be at least 32 characters (generate a random one)"),
+
   // Comma-separated list of origins allowed to call the API (the Next.js frontend).
   CORS_ORIGIN: z
     .string()

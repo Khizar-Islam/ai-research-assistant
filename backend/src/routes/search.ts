@@ -6,7 +6,7 @@
 // Body: { "question": string (1–2,000 chars), "topK"?: 1–20 (default 5) }
 import { Router } from "express";
 import { userIdOf } from "../lib/requestUser.ts";
-import { devUser } from "../middleware/devUser.ts";
+import { requireAuth } from "../middleware/auth.ts";
 import { AiServiceError } from "../services/aiRetry.ts";
 import { retrieveChunks } from "../services/retrieval.ts";
 import { aiErrorResponse } from "./aiErrors.ts";
@@ -14,7 +14,7 @@ import { parseSearchRequest } from "./search.validation.ts";
 
 export const searchRouter = Router();
 
-searchRouter.use(devUser); // replaced by real auth in Step 8
+searchRouter.use(requireAuth);
 
 searchRouter.post("/", async (req, res) => {
   const parsed = parseSearchRequest(req.body);

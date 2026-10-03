@@ -7,7 +7,7 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma.ts";
 import { userIdOf } from "../lib/requestUser.ts";
-import { devUser } from "../middleware/devUser.ts";
+import { requireAuth } from "../middleware/auth.ts";
 import { AiServiceError } from "../services/aiRetry.ts";
 import { answerer } from "../services/answering.ts";
 import { type Citation, markAvailability } from "../services/citations.ts";
@@ -16,7 +16,7 @@ import { parseHistoryLimit, parseQueryRequest } from "./query.validation.ts";
 import { createQueryStreamHandler } from "./queryStream.ts";
 
 export const queryRouter = Router();
-queryRouter.use(devUser); // replaced by real auth in Step 8
+queryRouter.use(requireAuth);
 
 queryRouter.post("/", async (req, res) => {
   const parsed = parseQueryRequest(req.body);
@@ -42,7 +42,7 @@ queryRouter.post("/", async (req, res) => {
 queryRouter.post("/stream", createQueryStreamHandler(answerer));
 
 export const historyRouter = Router();
-historyRouter.use(devUser);
+historyRouter.use(requireAuth);
 
 historyRouter.get("/", async (req, res) => {
   const limit = parseHistoryLimit(req.query.limit);
