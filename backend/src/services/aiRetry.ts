@@ -10,7 +10,8 @@ export type AiErrorCode =
   | "unavailable" // service errors/timeouts persisted through retries
   | "rejected" // the API refused the request (bad key, bad input)
   | "bad_response" // the API answered with something unusable
-  | "blocked"; // the model refused to produce output (safety filters)
+  | "blocked" // the model refused to produce output (safety filters)
+  | "cancelled"; // the client went away mid-request (a closed stream); nothing to report
 
 // A failure explained in words a user can read; `cause` keeps the original error for the
 // server log. Subclassed per service so callers can tell them apart.
@@ -22,6 +23,20 @@ export class AiServiceError extends Error {
     super(message, options);
     this.code = code;
   }
+}
+
+// The client disconnected, so the work was stopped. An AiServiceError so withRetry passes
+// it straight through instead of treating the abort as a network failure to retry.
+export class RequestCancelledError extends AiServiceError {
+  override name = "RequestCancelledError";
+
+  constructor(options?: ErrorOptions) {
+    super("cancelled", "The request was cancelled.", options);
+  }
+}
+
+export function throwIfCancelled(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw new RequestCancelledError({ cause: signal.reason });
 }
 
 export type RetryPolicy = {

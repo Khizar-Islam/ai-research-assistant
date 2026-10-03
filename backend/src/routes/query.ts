@@ -1,5 +1,6 @@
-// POST /api/query   — ask a question; get an answer with citations; saved to history.
-// GET  /api/queries — the user's past questions and answers, newest first.
+// POST /api/query        — ask a question; get an answer with citations; saved to history.
+// POST /api/query/stream — the same, streamed as server-sent events (see queryStream.ts).
+// GET  /api/queries      — the user's past questions and answers, newest first.
 //
 // POST body: { "question": string (1–2,000 chars) }
 // GET query: ?limit=1..50 (default 20)
@@ -12,6 +13,7 @@ import { answerer } from "../services/answering.ts";
 import { type Citation, markAvailability } from "../services/citations.ts";
 import { aiErrorResponse } from "./aiErrors.ts";
 import { parseHistoryLimit, parseQueryRequest } from "./query.validation.ts";
+import { createQueryStreamHandler } from "./queryStream.ts";
 
 export const queryRouter = Router();
 queryRouter.use(devUser); // replaced by real auth in Step 8
@@ -35,6 +37,9 @@ queryRouter.post("/", async (req, res) => {
     res.status(response.status).json({ error: response.message });
   }
 });
+
+// POST /api/query/stream — the same, as server-sent events (see queryStream.ts).
+queryRouter.post("/stream", createQueryStreamHandler(answerer));
 
 export const historyRouter = Router();
 historyRouter.use(devUser);

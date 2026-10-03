@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { type AnswerDeps, CANDIDATES, createAnswerer, NO_DOCUMENTS_ANSWER } from "./answering.ts";
+import { RequestCancelledError } from "./aiRetry.ts";
+import { type AnswerDeps, CANDIDATES, createAnswerer, NO_DOCUMENTS_ANSWER, type StreamHooks } from "./answering.ts";
 import { GenerationError, REFUSAL } from "./generation.ts";
 import type { RetrievedChunk } from "./retrieval.ts";
 
@@ -24,6 +25,13 @@ function fakes(results: RetrievedChunk[], generatedText: string | Error = "Answe
     generate: async (...args) => {
       calls.generate.push(args);
       if (generatedText instanceof Error) throw generatedText;
+      return { text: generatedText, truncated: false, model: "test-model" };
+    },
+    // Streams the same text word by word.
+    generateStream: async (question, sources, onDelta) => {
+      calls.generate.push([question, sources]);
+      if (generatedText instanceof Error) throw generatedText;
+      for (const word of generatedText.match(/\S+\s*/g) ?? []) await onDelta(word);
       return { text: generatedText, truncated: false, model: "test-model" };
     },
     save: async (row) => {
@@ -107,5 +115,80 @@ describe("answerQuestion", () => {
     const { calls, answerer } = fakes([chunk(1, 0.7)], "Yes [1].");
     await answerer.answerQuestion("user-1", "q");
     assert.match(calls.logs.at(-1)!, /^\[query\] query-1: answered by test-model, best 0\.700, 1 citation\(s\), \d+ ms$/);
+  });
+});
+
+describe("streamQuestion", () => {
+  // Records every hook call in order, as the client would receive them.
+  function recorder(signal?: AbortSignal) {
+    const events: string[] = [];
+    const hooks: StreamHooks = {
+      onStage: (stage) => events.push(`stage:${stage}`),
+      onSources: (sources) => events.push(`sources:${sources.map((s) => `${s.marker}=${s.chunkId}`).join(",")}`),
+      onDelta: (text) => void events.push(`delta:${text}`),
+      signal,
+    };
+    return { events, hooks };
+  }
+
+  it("reports searching, every source, writing, then the text as it streams", async () => {
+    const { answerer } = fakes([chunk(1, 0.75), chunk(2, 0.7)], "Fact one [1]. Fact two [2].");
+    const { events, hooks } = recorder();
+    const result = await answerer.streamQuestion("user-1", "What?", hooks);
+
+    assert.deepEqual(events, [
+      "stage:searching",
+      "sources:1=chunk-1,2=chunk-2", // all sources the model sees, before the first word
+      "stage:writing",
+      "delta:Fact ",
+      "delta:one ",
+      "delta:[1]. ",
+      "delta:Fact ",
+      "delta:two ",
+      "delta:[2].",
+    ]);
+    assert.equal(result.answer, "Fact one [1]. Fact two [2].");
+  });
+
+  it("returns the same checked result as answerQuestion (invalid markers removed)", async () => {
+    const streamed = await fakes([chunk(1, 0.7)], "Real [1]. Invented [4].").answerer.streamQuestion("u", "q", recorder().hooks);
+    const plain = await fakes([chunk(1, 0.7)], "Real [1]. Invented [4].").answerer.answerQuestion("u", "q");
+
+    assert.equal(streamed.answer, "Real [1]. Invented.");
+    const { timings: _a, ...streamedRest } = streamed;
+    const { timings: _b, ...plainRest } = plain;
+    assert.deepEqual(streamedRest, plainRest);
+  });
+
+  it("skips straight to the result when nothing relevant was found: no sources, no writing", async () => {
+    const { calls, answerer } = fakes([chunk(1, 0.4)]);
+    const { events, hooks } = recorder();
+    const result = await answerer.streamQuestion("user-1", "q", hooks);
+
+    assert.deepEqual(events, ["stage:searching"]);
+    assert.equal(calls.generate.length, 0);
+    assert.equal(result.retrieval.skipped, "below_threshold");
+    assert.equal(calls.save.length, 1, "a don't-know answer is still history");
+  });
+
+  it("saves nothing when the client disconnected before the answer finished", async () => {
+    const cancel = new AbortController();
+    const { calls, answerer } = fakes([chunk(1, 0.7)], "Answer [1].");
+    const { hooks } = recorder(cancel.signal);
+    hooks.onDelta = () => cancel.abort(); // the client leaves while text is streaming
+
+    await assert.rejects(answerer.streamQuestion("user-1", "q", hooks), (error: Error) => error instanceof RequestCancelledError);
+    assert.equal(calls.save.length, 0);
+  });
+
+  it("stops before generating if the client left during the search", async () => {
+    const cancel = new AbortController();
+    const { calls, answerer } = fakes([chunk(1, 0.7)]);
+    const { hooks } = recorder(cancel.signal);
+    hooks.onStage = (stage) => stage === "searching" && cancel.abort();
+
+    await assert.rejects(answerer.streamQuestion("user-1", "q", hooks), RequestCancelledError);
+    assert.equal(calls.generate.length, 0);
+    assert.equal(calls.save.length, 0);
   });
 });

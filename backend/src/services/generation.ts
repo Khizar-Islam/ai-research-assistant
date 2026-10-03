@@ -9,7 +9,16 @@
 //
 // Temperature stays at the default 1.0: Google warns that lowering it on Gemini 3 models
 // can cause looping. Faithfulness comes from the prompt and the checks around it.
-import { AiServiceError, type RetryDeps, type RetryPolicy, retryDepsFrom, withRetry } from "./aiRetry.ts";
+import type { GenerateContentResponse } from "@google/genai"; // type only: no SDK load
+import {
+  AiServiceError,
+  type RetryDeps,
+  type RetryOptions,
+  type RetryPolicy,
+  retryDepsFrom,
+  throwIfCancelled,
+  withRetry,
+} from "./aiRetry.ts";
 
 export const REFUSAL = "I couldn't find the answer to that in your documents.";
 export const MAX_OUTPUT_TOKENS = 1_024; // a few sentences need ~30–100; this only stops runaways
@@ -17,6 +26,10 @@ const REQUEST_TIMEOUT_MS = 30_000;
 
 // A question has someone waiting for the answer: retry briefly, then fail with "busy".
 const GENERATION_POLICY: RetryPolicy = { maxAttempts: 3, maxWaitMs: 5_000, totalBudgetMs: 45_000 };
+// Once streamed text has reached the user, a retry would make the answer start over, so
+// a failure ends the answer instead. One attempt: errors are still classified (busy,
+// unavailable, rejected) with the same messages, just never retried.
+const NO_RETRY_POLICY: RetryPolicy = { maxAttempts: 1, maxWaitMs: 0, totalBudgetMs: 0 };
 
 export class GenerationError extends AiServiceError {
   override name = "GenerationError";
@@ -67,21 +80,25 @@ export type RawGeneration = {
 };
 export type GenerateCall = (request: GenerateRequest) => Promise<RawGeneration>;
 
-const geminiGenerate: GenerateCall = async ({ model, systemInstruction, prompt }) => {
-  // Imported lazily so loading this module (e.g. in unit tests) doesn't require a key.
-  const { gemini } = await import("../lib/gemini.ts");
-  const response = await gemini.models.generateContent({
-    model,
-    contents: prompt,
-    config: {
-      systemInstruction,
-      // LOW: flash-lite used 0 thinking tokens on simple questions and ~500 on a false
-      // premise in testing. "MINIMAL" isn't accepted by every model (3.8-flash rejects it).
-      thinkingConfig: { thinkingLevel: "LOW" as never },
-      maxOutputTokens: MAX_OUTPUT_TOKENS,
-      abortSignal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    },
-  });
+// One piece of a streamed response. Pieces can carry only metadata (no text).
+export type RawGenerationChunk = Partial<RawGeneration>;
+export type GenerateStreamCall = (request: GenerateRequest, signal?: AbortSignal) => Promise<AsyncIterable<RawGenerationChunk>>;
+
+// Settings shared by the streaming and non-streaming calls.
+function generationConfig(systemInstruction: string, signal?: AbortSignal) {
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  return {
+    systemInstruction,
+    // LOW: flash-lite used 0 thinking tokens on simple questions and ~500 on a false
+    // premise in testing. "MINIMAL" isn't accepted by every model (3.8-flash rejects it).
+    thinkingConfig: { thinkingLevel: "LOW" as never },
+    maxOutputTokens: MAX_OUTPUT_TOKENS,
+    // Stops at our timeout, or as soon as a streaming client disconnects.
+    abortSignal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+  };
+}
+
+function toRaw(response: GenerateContentResponse): RawGeneration {
   return {
     text: response.text ?? "",
     finishReason: response.candidates?.[0]?.finishReason,
@@ -92,6 +109,24 @@ const geminiGenerate: GenerateCall = async ({ model, systemInstruction, prompt }
       thinkingTokens: response.usageMetadata?.thoughtsTokenCount,
     },
   };
+}
+
+const geminiGenerate: GenerateCall = async ({ model, systemInstruction, prompt }) => {
+  // Imported lazily so loading this module (e.g. in unit tests) doesn't require a key.
+  const { gemini } = await import("../lib/gemini.ts");
+  return toRaw(await gemini.models.generateContent({ model, contents: prompt, config: generationConfig(systemInstruction) }));
+};
+
+const geminiGenerateStream: GenerateStreamCall = async ({ model, systemInstruction, prompt }, signal) => {
+  const { gemini } = await import("../lib/gemini.ts");
+  const stream = await gemini.models.generateContentStream({
+    model,
+    contents: prompt,
+    config: generationConfig(systemInstruction, signal),
+  });
+  return (async function* () {
+    for await (const response of stream) yield toRaw(response);
+  })();
 };
 
 export type Generated = {
@@ -131,13 +166,26 @@ function interpret(raw: RawGeneration, model: string): Generated {
   return { text, truncated: raw.finishReason === "MAX_TOKENS", model, usage: raw.usage };
 }
 
+// Merges a streamed piece's metadata into what we have so far. Fields a piece doesn't
+// carry are skipped, so they don't erase values from earlier pieces.
+function withMetadata(raw: RawGeneration, piece: RawGenerationChunk): RawGeneration {
+  return {
+    ...raw,
+    ...(piece.finishReason !== undefined && { finishReason: piece.finishReason }),
+    ...(piece.blockReason !== undefined && { blockReason: piece.blockReason }),
+    ...(piece.usage !== undefined && { usage: piece.usage }),
+  };
+}
+
 export type GeneratorDeps = Partial<RetryDeps> & {
   generate?: GenerateCall;
+  generateStream?: GenerateStreamCall;
   model?: string; // default: GEMINI_CHAT_MODEL from the environment
 };
 
 export function createGenerator(deps: GeneratorDeps = {}) {
   const generate = deps.generate ?? geminiGenerate;
+  const generateStream = deps.generateStream ?? geminiGenerateStream;
   const retryDeps = retryDepsFrom(deps);
 
   async function resolveModel(): Promise<string> {
@@ -146,22 +194,85 @@ export function createGenerator(deps: GeneratorDeps = {}) {
     return env.GEMINI_CHAT_MODEL;
   }
 
+  const retryOptions = (policy: RetryPolicy): RetryOptions => ({
+    policy,
+    deadline: retryDeps.now() + policy.totalBudgetMs,
+    logTag: "generation",
+    serviceName: "Answer generation",
+    makeError: (code, message, options) => new GenerationError(code, message, options),
+  });
+
   return {
     // `sources[i]` becomes source number i + 1 in the prompt (and [i + 1] in the answer).
     async generateAnswer(question: string, sources: PromptSource[]): Promise<Generated> {
       const model = await resolveModel();
       const request: GenerateRequest = { model, systemInstruction: SYSTEM_INSTRUCTION, prompt: buildUserPrompt(question, sources) };
-      return withRetry(
-        async () => interpret(await generate(request), model),
-        {
-          policy: GENERATION_POLICY,
-          deadline: retryDeps.now() + GENERATION_POLICY.totalBudgetMs,
-          logTag: "generation",
-          serviceName: "Answer generation",
-          makeError: (code, message, options) => new GenerationError(code, message, options),
-        },
+      return withRetry(async () => interpret(await generate(request), model), retryOptions(GENERATION_POLICY), retryDeps);
+    },
+
+    // The same answer, streamed: `onDelta` gets each piece of text as the model writes it.
+    // The full text is checked exactly like generateAnswer's once the stream ends, so a
+    // stream that ends blocked or empty still throws (the client discards what it showed).
+    // `signal` stops the model call when the client disconnects.
+    async streamAnswer(
+      question: string,
+      sources: PromptSource[],
+      onDelta: (text: string) => void | Promise<void>,
+      signal?: AbortSignal,
+    ): Promise<Generated> {
+      const model = await resolveModel();
+      const request: GenerateRequest = { model, systemInstruction: SYSTEM_INSTRUCTION, prompt: buildUserPrompt(question, sources) };
+      let raw: RawGeneration = { text: "" };
+      let pieces: AsyncIterator<RawGenerationChunk> | undefined;
+
+      // A client disconnect surfaces from the SDK as a network-style error. Report it as a
+      // cancellation instead, which withRetry never retries.
+      const cancellable =
+        <T>(work: () => Promise<T>) =>
+        async (): Promise<T> => {
+          throwIfCancelled(signal);
+          try {
+            return await work();
+          } catch (error) {
+            throwIfCancelled(signal);
+            throw error;
+          }
+        };
+
+      // Until the first text arrives nothing has reached the user, so failures here are
+      // retried exactly like generateAnswer's, each attempt with a fresh stream.
+      const first = await withRetry(
+        cancellable(async () => {
+          raw = { text: "" };
+          pieces = (await generateStream(request, signal))[Symbol.asyncIterator]();
+          for (let next = await pieces.next(); !next.done; next = await pieces.next()) {
+            raw = withMetadata(raw, next.value);
+            if (next.value.text) return next.value.text;
+          }
+          return ""; // ended without any text: interpret() below says why
+        }),
+        retryOptions(GENERATION_POLICY),
         retryDeps,
       );
+
+      if (first) {
+        raw.text = first;
+        await onDelta(first);
+        await withRetry(
+          cancellable(async () => {
+            for (let next = await pieces!.next(); !next.done; next = await pieces!.next()) {
+              raw = withMetadata(raw, next.value);
+              if (!next.value.text) continue;
+              raw.text += next.value.text;
+              await onDelta(next.value.text);
+            }
+          }),
+          retryOptions(NO_RETRY_POLICY),
+          retryDeps,
+        );
+      }
+
+      return interpret(raw, model);
     },
   };
 }

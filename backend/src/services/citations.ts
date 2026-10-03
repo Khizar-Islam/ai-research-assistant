@@ -59,22 +59,23 @@ export function processAnswer(rawAnswer: string, sources: CitableSource[]): Proc
     })
     .trim();
 
-  const citations = [...cited]
-    .sort((a, b) => a - b)
-    .map((marker) => {
-      const source = sources[marker - 1]!;
-      return {
-        marker,
-        chunkId: source.chunkId,
-        documentId: source.documentId,
-        filename: source.filename,
-        chunkIndex: source.chunkIndex,
-        similarity: Math.round(source.similarity * 10_000) / 10_000,
-        snippet: snippetOf(source.content),
-      };
-    });
+  const citations = [...cited].sort((a, b) => a - b).map((marker) => toCitation(sources[marker - 1]!, marker));
 
   return { answer, answered: citations.length > 0, citations, invalidMarkers: [...invalid].sort((a, b) => a - b) };
+}
+
+// The citation for the source the model saw as number `marker`. Also used to tell a
+// streaming client every source up front, so markers work before the answer is finished.
+export function toCitation(source: CitableSource, marker: number): Citation {
+  return {
+    marker,
+    chunkId: source.chunkId,
+    documentId: source.documentId,
+    filename: source.filename,
+    chunkIndex: source.chunkIndex,
+    similarity: Math.round(source.similarity * 10_000) / 10_000,
+    snippet: snippetOf(source.content),
+  };
 }
 
 // The first ~300 characters, cut at a word boundary.

@@ -24,6 +24,10 @@ export function aiErrorResponse(error: AiServiceError, action: "Search" | "Answe
     case "blocked":
       // The message was written for users ("...blocked by the model's safety filters.").
       return { status: 422, message: error.message, log: true };
+    case "cancelled":
+      // Only happens once the client has gone, so nobody receives this; it keeps the
+      // switch exhaustive.
+      return { status: 503, message: error.message, log: false };
     case "rejected":
     case "bad_response":
     case "too_large": // can't happen for a single question, but keep the switch exhaustive

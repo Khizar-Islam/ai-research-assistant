@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { ApiError } from "@google/genai";
+import { RequestCancelledError } from "./aiRetry.ts";
 import {
   buildUserPrompt,
   createGenerator,
   type GenerateCall,
   type GenerateRequest,
+  type GenerateStreamCall,
   GenerationError,
   type RawGeneration,
+  type RawGenerationChunk,
   REFUSAL,
   SYSTEM_INSTRUCTION,
 } from "./generation.ts";
@@ -176,5 +179,110 @@ describe("generateAnswer", () => {
       message: "The answer generation service rejected the request",
     });
     assert.equal(model.requests.length, 1);
+  });
+});
+
+describe("streamAnswer", () => {
+  type Piece = RawGenerationChunk | Error; // an Error is thrown at that point of the stream
+
+  // A fake streaming model: `respond(call)` gives each call's pieces, or throws to fail
+  // before the stream even opens.
+  function fakeStream(respond: (call: number) => Piece[] | Error) {
+    const requests: GenerateRequest[] = [];
+    const generateStream: GenerateStreamCall = async (request) => {
+      requests.push(request);
+      const pieces = respond(requests.length);
+      if (pieces instanceof Error) throw pieces;
+      return (async function* () {
+        for (const piece of pieces) {
+          if (piece instanceof Error) throw piece;
+          yield piece;
+        }
+      })();
+    };
+    return { requests, generateStream };
+  }
+
+  async function run(respond: (call: number) => Piece[] | Error, signal?: AbortSignal) {
+    const model = fakeStream(respond);
+    const time = fakeTime();
+    const deltas: string[] = [];
+    const generator = createGenerator({ generateStream: model.generateStream, model: "test-model", ...time });
+    const result = generator.streamAnswer("Q?", SOURCES, (text) => void deltas.push(text), signal);
+    return { result, deltas, requests: model.requests, time };
+  }
+
+  it("passes each piece of text on as it arrives and returns the whole answer", async () => {
+    const { result, deltas, requests } = await run(() => [{ text: "Fresnel " }, { text: "designed it [1]." }, { finishReason: "STOP" }]);
+    const generated = await result;
+
+    assert.deepEqual(deltas, ["Fresnel ", "designed it [1]."]);
+    assert.equal(generated.text, "Fresnel designed it [1].");
+    assert.equal(generated.truncated, false);
+    assert.equal(requests[0]!.systemInstruction, SYSTEM_INSTRUCTION);
+  });
+
+  it("skips pieces that carry only metadata", async () => {
+    const { result, deltas } = await run(() => [{ text: "" }, { text: "Yes [1]." }, { text: "", finishReason: "STOP", usage: { outputTokens: 4 } }]);
+    const generated = await result;
+    assert.deepEqual(deltas, ["Yes [1]."]);
+    assert.deepEqual(generated.usage, { outputTokens: 4 });
+  });
+
+  it("retries a failure before the first text, like the non-streaming call", async () => {
+    // Call 1: the stream breaks before any text. Call 2: works.
+    const { result, deltas, requests, time } = await run((call) =>
+      call === 1 ? [{ text: "" }, apiError(503)] : [{ text: "Answer [1]." }, { finishReason: "STOP" }],
+    );
+    assert.equal((await result).text, "Answer [1].");
+    assert.equal(requests.length, 2);
+    assert.deepEqual(time.waits, [1000]);
+    assert.deepEqual(deltas, ["Answer [1]."], "the user saw only the successful attempt");
+  });
+
+  it("does not retry once text has been sent: the answer ends with an error", async () => {
+    const { result, deltas, requests, time } = await run(() => [{ text: "Fresnel " }, apiError(503)]);
+    await assert.rejects(result, (error: Error) => error instanceof GenerationError && (error as GenerationError).code === "unavailable");
+    assert.equal(requests.length, 1);
+    assert.deepEqual(time.waits, []);
+    assert.deepEqual(deltas, ["Fresnel "]);
+  });
+
+  it("reports a stream that ends blocked by safety filters, even after text was sent", async () => {
+    const { result } = await run(() => [{ text: "Partial" }, { finishReason: "SAFETY" }]);
+    await assert.rejects(result, (error: Error) => (error as GenerationError).code === "blocked");
+  });
+
+  it("reports a stream with no text at all as a bad response, without retrying", async () => {
+    const { result, requests } = await run(() => [{ text: "", finishReason: "STOP" }]);
+    await assert.rejects(result, (error: Error) => (error as GenerationError).code === "bad_response");
+    assert.equal(requests.length, 1);
+  });
+
+  it("flags an answer cut off at the token limit", async () => {
+    const { result } = await run(() => [{ text: "A long answer" }, { finishReason: "MAX_TOKENS" }]);
+    assert.equal((await result).truncated, true);
+  });
+
+  it("stops without retrying when the client disconnects", async () => {
+    const cancel = new AbortController();
+    // The SDK reports an abort as a plain error; it must not be mistaken for a network
+    // failure and retried.
+    const { result, requests, time } = await run(() => {
+      cancel.abort();
+      return new Error("This operation was aborted");
+    }, cancel.signal);
+
+    await assert.rejects(result, RequestCancelledError);
+    assert.equal(requests.length, 1);
+    assert.deepEqual(time.waits, []);
+  });
+
+  it("doesn't call the model at all if the client already left", async () => {
+    const cancel = new AbortController();
+    cancel.abort();
+    const { result, requests } = await run(() => [{ text: "x" }], cancel.signal);
+    await assert.rejects(result, RequestCancelledError);
+    assert.equal(requests.length, 0);
   });
 });
