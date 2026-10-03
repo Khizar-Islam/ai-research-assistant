@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+/* Design tokens. Tailwind v4 turns every --color-* into utilities (bg-paper, text-ink,
+   border-rule…) and every --font-* into font-* utilities. Light mode only for now: dark
+   mode later is a second set of these values, not a rewrite. */
+@theme {
+  /* Printed page: warm paper, near-black ink, hairline rules. */
+  --color-paper: #f4f0e6;
+  --color-paper-deep: #ebe5d6; /* panels and hover, one step darker than the page */
+  --color-ink: #1b1a17;
+  --color-ink-soft: #57534a; /* secondary text, ~7:1 on paper */
+  --color-ink-faint: #8a8476; /* decoration and disabled only: too light for body text */
+  --color-rule: #d9d2c2;
+
+  /* One accent: a proofreader's red, for citations, focus and primary actions. */
+  --color-mark: #c23b22;
+  --color-mark-deep: #9e2f1b; /* hover/pressed */
+
+  /* Status. Ochre is only legible as a fill or bar; status text uses ochre-ink. */
+  --color-ready: #2f5d50;
+  --color-ochre: #a87b12;
+  --color-ochre-ink: #7a5a0d;
+}
+
+/* next/font defines these variables on <html>; `inline` makes the utilities use the
+   variable itself instead of copying its (not yet known) value at build time. */
+@theme inline {
+  --font-serif: var(--font-newsreader), Georgia, serif;
+  --font-sans: var(--font-plex-sans), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-mark) 22%, transparent);
+  }
+
+  /* One visible focus style everywhere, in the accent colour. */
+  :focus-visible {
+    outline: 2px solid var(--color-mark);
+    outline-offset: 3px;
+  }
+}
