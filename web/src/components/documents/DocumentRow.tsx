@@ -3,7 +3,8 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { FILE_TYPE_LABEL, formatUploadedAt, plural, STAGE_LABEL } from "@/lib/format";
-import { loop } from "@/lib/motion";
+import { SwapItem } from "@/components/Swap";
+import { enter, exit, loop } from "@/lib/motion";
 import { EMBED_BATCH_SIZE, STAGES } from "@/lib/pipeline";
 import type { DocumentListItem, IngestStage } from "@/lib/types";
 import { ChunkStrip } from "./ChunkStrip";
@@ -12,19 +13,21 @@ type Props = {
   document: DocumentListItem;
   onDelete: (document: DocumentListItem) => void;
   onOpen: (document: DocumentListItem, trigger: HTMLElement) => void; // show its passages
+  enterDelay: number; // seconds; staggers the rows of a freshly loaded list
+  slideOnReorder: boolean; // off for long lists, where every row measuring itself costs too much
 };
 
-export function DocumentRow({ document, onDelete, onOpen }: Props) {
+export function DocumentRow({ document, onDelete, onOpen, enterDelay, slideOnReorder }: Props) {
   const reducedMotion = useReducedMotion();
   const { filename, fileType, status, createdAt, chunkCount, errorMessage, stage } = document;
 
   return (
     <motion.li
-      layout="position" // slide into place when a row above is added or removed
+      layout={slideOnReorder ? "position" : false} // slide into place when a row above is added or removed
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, x: -16, transition: { duration: 0.2 } }}
-      transition={{ duration: 0.3, ease: "easeOut" }}
+      exit={{ opacity: 0, x: -16, transition: exit }}
+      transition={{ ...enter(enterDelay), layout: enter() }} // the stagger delays the entrance only, never a later slide
       className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-2 border-b border-rule py-5 transition-colors duration-150 hover:bg-paper-deep/40 sm:grid-cols-[minmax(0,1fr)_15rem_8.5rem] sm:items-baseline"
     >
       {/* Explicit grid positions at both sizes: phones put Remove beside the filename and
@@ -62,11 +65,11 @@ export function DocumentRow({ document, onDelete, onOpen }: Props) {
         )}
       </div>
 
-      <div className="col-span-2 row-start-2 sm:col-span-1 sm:col-start-2 sm:row-start-1">
+      <div className="relative col-span-2 row-start-2 sm:col-span-1 sm:col-start-2 sm:row-start-1">
         <StatusLine document={document} />
       </div>
 
-      <div className="col-start-2 row-start-1 justify-self-end sm:col-start-3">
+      <div className="relative col-start-2 row-start-1 justify-self-end sm:col-start-3">
         <DeleteControl filename={filename} onConfirm={() => onDelete(document)} />
       </div>
 
@@ -97,18 +100,26 @@ export function DocumentRow({ document, onDelete, onOpen }: Props) {
   );
 }
 
+// Processing → Ready (or Failed) crossfades in place, and the new dot settles into
+// position once. Only on a change seen while the page is open: initial={false} means a
+// list that loads already finished just shows it.
 function StatusLine({ document }: { document: DocumentListItem }) {
   const { status } = document;
 
-  if (status === "ready") {
-    return <Status swatch="bg-ready" className="text-ready" label="Ready" />;
-  }
-  if (status === "failed") {
-    return <Status swatch="bg-mark" className="text-mark" label="Failed" />;
-  }
-
-  // The details (stage track, strip) are in <Progress> under the row.
-  return <Status swatch="bg-ochre" className="text-ochre-ink" label="Processing" pulse />;
+  return (
+    <AnimatePresence mode="popLayout" initial={false}>
+      <SwapItem key={status}>
+        {status === "ready" ? (
+          <Status swatch="bg-ready" className="text-ready" label="Ready" settle />
+        ) : status === "failed" ? (
+          <Status swatch="bg-mark" className="text-mark" label="Failed" />
+        ) : (
+          // The details (stage track, strip) are in <Progress> under the row.
+          <Status swatch="bg-ochre" className="text-ochre-ink" label="Processing" pulse />
+        )}
+      </SwapItem>
+    </AnimatePresence>
+  );
 }
 
 // Where a processing document is: the four pipeline stages, then its passages as a chunk
@@ -189,12 +200,17 @@ function StageTrack({ current, embedded, total }: { current: IngestStage; embedd
   );
 }
 
-function Status({ swatch, className, label, pulse }: { swatch: string; className: string; label: string; pulse?: boolean }) {
+type StatusProps = { swatch: string; className: string; label: string; pulse?: boolean; settle?: boolean };
+
+function Status({ swatch, className, label, pulse, settle }: StatusProps) {
   // The pulse says "still working"; with reduced motion the ochre dot and the label say it.
   const pulsing = loop(useReducedMotion() || !pulse, { opacity: [1, 0.3, 1] }, 1.6);
+  // "Done": the dot lands a touch large and settles. A scale, so MotionConfig drops it
+  // under reduced motion and only the crossfade remains.
+  const settling = settle ? { initial: { scale: 1.6 }, animate: { scale: 1 }, transition: enter() } : {};
   return (
     <p className={`flex items-center gap-2 text-sm ${className}`}>
-      <motion.span aria-hidden="true" className={`size-2 shrink-0 ${swatch}`} {...pulsing} />
+      <motion.span aria-hidden="true" className={`size-2 shrink-0 ${swatch}`} {...pulsing} {...settling} />
       {label}
     </p>
   );
@@ -216,38 +232,43 @@ function DeleteControl({ filename, onConfirm }: { filename: string; onConfirm: (
     wasConfirming.current = confirming;
   }, [confirming]);
 
-  if (!confirming) {
-    return (
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={() => setConfirming(true)}
-        aria-label={`Remove ${filename}`}
-        className="link-underline text-sm text-ink-soft hover:text-mark"
-      >
-        Remove
-      </button>
-    );
-  }
-
+  // Same right edge for both states, so the swap stays anchored to the column's edge.
   return (
-    <div
-      role="group"
-      aria-label={`Confirm removing ${filename}`}
-      className="flex items-center gap-3 text-sm"
-      onKeyDown={(event) => event.key === "Escape" && setConfirming(false)}
-    >
-      <button
-        ref={confirmRef}
-        type="button"
-        onClick={onConfirm}
-        className="press bg-mark px-2.5 py-1 font-medium text-paper hover:bg-mark-deep"
-      >
-        Remove
-      </button>
-      <button type="button" onClick={() => setConfirming(false)} className="text-ink-soft hover:text-ink">
-        Keep
-      </button>
-    </div>
+    <AnimatePresence mode="popLayout" initial={false} anchorX="right">
+      {confirming ? (
+        <SwapItem key="confirm" instantWhenReduced>
+          <div
+            role="group"
+            aria-label={`Confirm removing ${filename}`}
+            className="flex items-center gap-3 text-sm"
+            onKeyDown={(event) => event.key === "Escape" && setConfirming(false)}
+          >
+            <button
+              ref={confirmRef}
+              type="button"
+              onClick={onConfirm}
+              className="press bg-mark px-2.5 py-1 font-medium text-paper hover:bg-mark-deep"
+            >
+              Remove
+            </button>
+            <button type="button" onClick={() => setConfirming(false)} className="text-ink-soft hover:text-ink">
+              Keep
+            </button>
+          </div>
+        </SwapItem>
+      ) : (
+        <SwapItem key="trigger" instantWhenReduced>
+          <button
+            ref={triggerRef}
+            type="button"
+            onClick={() => setConfirming(true)}
+            aria-label={`Remove ${filename}`}
+            className="link-underline text-sm text-ink-soft hover:text-mark"
+          >
+            Remove
+          </button>
+        </SwapItem>
+      )}
+    </AnimatePresence>
   );
 }
