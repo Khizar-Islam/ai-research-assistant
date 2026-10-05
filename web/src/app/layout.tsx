@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans, Newsreader } from "next/font/google";
 import { auth } from "@/auth";
 import { SiteHeader } from "@/components/SiteHeader";
+import { ServerWakeNotice } from "@/components/ServerWakeNotice";
 import { PRODUCT_NAME } from "@/lib/config";
 import { Providers } from "./providers";
 import "./globals.css";
@@ -32,6 +33,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-dvh bg-paper font-sans text-ink">
         <Providers session={session}>
           <SiteHeader />
+          <ServerWakeNotice />
           {children}
         </Providers>
       </body>

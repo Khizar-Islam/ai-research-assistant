@@ -3,6 +3,7 @@
 // live here once.
 import { getApiToken } from "./apiTokenClient";
 import { API_URL } from "./config";
+import { trackWait } from "./serverWake";
 import type { DocumentListItem, DocumentSummary, DocumentWithChunks, HistoryQuery } from "./types";
 
 // A failed request, with a message that is safe to show the user. status 0 means the
@@ -27,15 +28,19 @@ export class ApiError extends Error {
 //     their tokens (e.g. API_JWT_SECRET differs between web and API). Sending them to sign
 //     in would loop forever (sign-in sends signed-in users straight back), so it's
 //     reported as an error on the page instead.
-async function request(path: string, init: RequestInit = {}): Promise<Response> {
-  let response = await send(path, init, await getApiToken());
+// `wakeNotice: false` for requests whose wait says nothing about the server waking up
+// (an upload's wait is mostly the file travelling over the user's connection).
+type Options = { wakeNotice?: boolean };
+
+async function request(path: string, init: RequestInit = {}, options: Options = {}): Promise<Response> {
+  let response = await send(path, init, await getApiToken(), options);
   if (response.status === 401) {
     const fresh = await getApiToken({ forceRefresh: true });
     if (!fresh) {
       goToSignIn();
       throw new ApiError(401, "You're signed out. Sign in to continue.");
     }
-    response = await send(path, init, fresh);
+    response = await send(path, init, fresh, options);
     if (response.status === 401) {
       throw new ApiError(401, "The server didn't accept your sign-in. Try signing out and in again; if it keeps happening, the app's auth settings are out of sync.");
     }
@@ -52,9 +57,12 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
   throw new ApiError(response.status, message);
 }
 
-async function send(path: string, init: RequestInit, token: string | null): Promise<Response> {
+async function send(path: string, init: RequestInit, token: string | null, options: Options): Promise<Response> {
   const headers = new Headers(init.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
+  // fetch resolves when the response headers arrive, so this times the wait for the
+  // server only: a streamed answer that takes a while to finish doesn't count.
+  const done = options.wakeNotice === false ? () => {} : trackWait();
   try {
     return await fetch(`${API_URL}${path}`, { ...init, headers });
   } catch (error) {
@@ -62,6 +70,8 @@ async function send(path: string, init: RequestInit, token: string | null): Prom
     // (TanStack Query aborts outdated ones) is passed through untouched.
     if (isAbort(error)) throw error;
     throw new ApiError(0, `Can't reach the server at ${API_URL}. Is the backend running?`);
+  } finally {
+    done();
   }
 }
 
@@ -78,8 +88,8 @@ function goToSignIn() {
   window.location.assign(`/signin?callbackUrl=${encodeURIComponent(here)}`);
 }
 
-async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await request(path, init);
+async function apiFetch<T>(path: string, init: RequestInit = {}, options: Options = {}): Promise<T> {
+  const response = await request(path, init, options);
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
@@ -110,7 +120,7 @@ export function uploadDocument(file: File): Promise<DocumentSummary> {
   const form = new FormData();
   form.append("file", file);
   // No Content-Type header: the browser sets multipart/form-data with the right boundary.
-  return apiFetch<DocumentSummary>("/api/documents/upload", { method: "POST", body: form });
+  return apiFetch<DocumentSummary>("/api/documents/upload", { method: "POST", body: form }, { wakeNotice: false });
 }
 
 export function deleteDocument(id: string): Promise<void> {
