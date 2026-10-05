@@ -13,7 +13,8 @@ const server = app.listen(env.PORT, (error?: Error) => {
     console.error(`Could not start the API on port ${env.PORT}: ${error.message}`);
     process.exit(1);
   }
-  console.log(`API listening on http://localhost:${env.PORT} (${env.NODE_ENV})`);
+  // Port only, no host: on Render the public URL is https://…onrender.com, not localhost.
+  console.log(`API listening on port ${env.PORT} (${env.NODE_ENV})`);
 });
 
 // Documents left on "processing" by a previous run that died mid-upload. Not fatal if it
