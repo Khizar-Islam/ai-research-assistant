@@ -4,12 +4,19 @@
 // chunk strip at the top is a minimap: the passages on screen are marked in red, and
 // clicking a cell jumps to that passage. Opened from an answer's citation, it starts at
 // the cited passage (`focusChunkIndex`) and marks it.
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useDocumentChunks } from "@/lib/hooks/useDocuments";
 import { plural } from "@/lib/format";
+import { EASE } from "@/lib/motion";
 import type { DocumentListItem } from "@/lib/types";
 import { ChunkStrip } from "./ChunkStrip";
+
+// The cited passage flashes once when the panel opens on it, then settles to its resting
+// mark. It starts as the panel finishes sliding in (the slide below is 0.3 s), and fades
+// slower than the usual entrances: it's there to catch the eye, not to arrive.
+const SLIDE_SECONDS = 0.3;
+const FLASH_SECONDS = 0.9;
 
 type Props = {
   document: DocumentListItem;
@@ -23,6 +30,7 @@ export function ChunkPanel({ document, onClose, focusChunkIndex }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState<ReadonlySet<number>>(new Set());
+  const reducedMotion = useReducedMotion();
 
   // Focus goes into the dialog when it opens. Page scrolling is locked behind it.
   useEffect(() => {
@@ -116,7 +124,7 @@ export function ChunkPanel({ document, onClose, focusChunkIndex }: Props) {
         initial={{ x: "100%" }}
         animate={{ x: 0 }}
         exit={{ x: "100%" }}
-        transition={{ type: "tween", duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
+        transition={{ type: "tween", duration: SLIDE_SECONDS, ease: [0.32, 0.72, 0, 1] }}
       >
         <header className="border-b border-rule px-5 pt-5 pb-4 sm:px-7">
           <div className="flex items-start justify-between gap-4">
@@ -173,9 +181,21 @@ export function ChunkPanel({ document, onClose, focusChunkIndex }: Props) {
               data-index={chunk.chunkIndex}
               aria-current={chunk.chunkIndex === focusChunkIndex ? "true" : undefined}
               className={`scroll-mt-2 border-b border-rule py-5 last:border-b-0 ${
-                chunk.chunkIndex === focusChunkIndex ? "-mx-3 border-l-2 border-l-mark bg-mark/5 px-3" : ""
+                chunk.chunkIndex === focusChunkIndex ? "relative isolate -mx-3 border-l-2 border-l-mark bg-mark/5 px-3" : ""
               }`}
             >
+              {/* The flash: a stronger tint behind the text that fades out (opacity only),
+                  on this one passage. With reduced motion there's no flash; the resting
+                  mark above already says which passage was cited. */}
+              {chunk.chunkIndex === focusChunkIndex && !reducedMotion && (
+                <motion.span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 -z-10 bg-mark/15"
+                  initial={{ opacity: 1 }}
+                  animate={{ opacity: 0 }}
+                  transition={{ duration: FLASH_SECONDS, delay: SLIDE_SECONDS, ease: EASE.out }}
+                />
+              )}
               <p className="font-mono text-[11px] text-ink-soft">
                 <span className="text-mark">§{chunk.chunkIndex + 1}</span> · ~{chunk.tokenEstimate} tokens ·{" "}
                 {chunk.charCount.toLocaleString("en-US")} characters
