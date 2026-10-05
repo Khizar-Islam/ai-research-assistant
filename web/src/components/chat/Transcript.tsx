@@ -2,8 +2,10 @@
 
 // The questions asked so far and their answers, oldest first (newest at the bottom, next
 // to where the next question is typed).
+import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { plural } from "@/lib/format";
+import { DURATION, EASE, exit } from "@/lib/motion";
 import { useDocuments } from "@/lib/hooks/useDocuments";
 import type { AnswerExtras, LiveAnswer } from "@/lib/hooks/useAsk";
 import { HISTORY_LIMIT, useQueryHistory } from "@/lib/hooks/useQueries";
@@ -18,21 +20,42 @@ type Props = {
   onDismiss: () => void;
 };
 
-export function Transcript({ live, extras, justAnswered, onRetry, onDismiss }: Props) {
+// The skeleton crossfades into whatever replaces it (the transcript, or the error): it
+// leaves the layout at once and fades out over the content fading in.
+export function Transcript(props: Props) {
   const history = useQueryHistory();
+  const view = history.isPending ? "loading" : history.isError ? "error" : "entries";
 
-  if (history.isPending) return <LoadingEntries />;
+  return (
+    <div className="relative">
+      <AnimatePresence mode="popLayout" initial={false}>
+        <motion.div
+          key={view}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1, transition: { duration: DURATION.swap, ease: EASE.out } }}
+          exit={{ opacity: 0, transition: exit }}
+        >
+          {view === "loading" ? (
+            <LoadingEntries />
+          ) : view === "error" ? (
+            <div role="alert" className="border-l-2 border-mark bg-paper-deep px-4 py-3 text-sm">
+              Couldn’t load your earlier questions. {history.error?.message}{" "}
+              <button type="button" onClick={() => history.refetch()} className="font-medium underline underline-offset-4">
+                Try again
+              </button>
+            </div>
+          ) : (
+            <Entries {...props} />
+          )}
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+}
 
-  if (history.isError) {
-    return (
-      <div role="alert" className="border-l-2 border-mark bg-paper-deep px-4 py-3 text-sm">
-        Couldn’t load your earlier questions. {history.error.message}{" "}
-        <button type="button" onClick={() => history.refetch()} className="font-medium underline underline-offset-4">
-          Try again
-        </button>
-      </div>
-    );
-  }
+function Entries({ live, extras, justAnswered, onRetry, onDismiss }: Props) {
+  const history = useQueryHistory();
+  if (!history.data) return null; // Transcript only renders this once history has arrived
 
   const entries = [...history.data].reverse(); // the API sends newest first
 
@@ -53,7 +76,8 @@ export function Transcript({ live, extras, justAnswered, onRetry, onDismiss }: P
           ))}
         </>
       )}
-      {live && <LiveEntry live={live} onRetry={onRetry} onDismiss={onDismiss} />}
+      {/* Keyed per attempt, so each new question (or "Ask again") enters fresh. */}
+      {live && <LiveEntry key={live.startedAt} live={live} onRetry={onRetry} onDismiss={onDismiss} />}
     </section>
   );
 }

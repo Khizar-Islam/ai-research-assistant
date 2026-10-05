@@ -6,7 +6,7 @@
 import { motion, useReducedMotion } from "motion/react";
 import type { LiveAnswer } from "@/lib/hooks/useAsk";
 import { plural } from "@/lib/format";
-import { loop } from "@/lib/motion";
+import { enter, loop } from "@/lib/motion";
 import { AnswerText } from "./AnswerText";
 import { QuestionHeading } from "./Entry";
 
@@ -19,7 +19,16 @@ export function LiveEntry({ live, onRetry, onDismiss }: Props) {
   const lastPiece = live.pieces.at(-1) ?? "";
 
   return (
-    <article id={LIVE_ENTRY_ID} aria-labelledby="live-question" className="scroll-mt-24 border-t border-rule py-8 first:border-t-0">
+    // Rises out of the question box below it into the transcript. Remounted per attempt
+    // (Transcript keys it), so "Ask again" rises too. A transform, so reduced motion fades.
+    <motion.article
+      id={LIVE_ENTRY_ID}
+      aria-labelledby="live-question"
+      className="scroll-mt-24 border-t border-rule py-8 first:border-t-0"
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={enter()}
+    >
       <QuestionHeading id="live-question" question={live.question} time="Now" />
 
       <div className="mt-4">
@@ -41,7 +50,7 @@ export function LiveEntry({ live, onRetry, onDismiss }: Props) {
         )}
 
         {live.phase === "error" && (
-          <div role="alert" className="border-l-2 border-mark bg-paper-deep px-4 py-3 text-sm">
+          <motion.div role="alert" className="border-l-2 border-mark bg-paper-deep px-4 py-3 text-sm" {...noteEntrance}>
             <p>{live.error?.message}</p>
             <p className="mt-2 flex gap-4">
               <button type="button" onClick={onRetry} className="font-medium underline underline-offset-4 hover:text-mark">
@@ -51,21 +60,24 @@ export function LiveEntry({ live, onRetry, onDismiss }: Props) {
                 Dismiss
               </button>
             </p>
-          </div>
+          </motion.div>
         )}
 
         {live.phase === "stopped" && (
-          <p className="border-l-2 border-rule pl-4 text-sm text-ink-soft">
+          <motion.p className="border-l-2 border-rule pl-4 text-sm text-ink-soft" {...noteEntrance}>
             Stopped. Nothing was saved.{" "}
             <button type="button" onClick={onRetry} className="text-ink underline underline-offset-4 hover:text-mark">
               Ask again
             </button>
-          </p>
+          </motion.p>
         )}
       </div>
-    </article>
+    </motion.article>
   );
 }
+
+// How the error and "Stopped" notes arrive: a short rise (a plain fade with reduced motion).
+const noteEntrance = { initial: { opacity: 0, y: 4 }, animate: { opacity: 1, y: 0 }, transition: enter() };
 
 // The two real stages the server reports. Announced politely to screen readers (the
 // streaming text itself isn't: reading every piece aloud would be noise).
@@ -81,7 +93,16 @@ function Progress({ live }: { live: LiveAnswer }) {
         <span aria-hidden="true" className={`size-1.5 ${writing ? "bg-ink" : "bg-ochre motion-safe:animate-ripple"}`} />
         Search
       </span>
-      <span aria-hidden="true" className="h-px w-4 bg-rule" />
+      {/* The connector fills in, left to right, as the search hands over to writing.
+          scaleX is a transform, so with reduced motion it's simply filled. */}
+      <span aria-hidden="true" className="relative h-px w-4 bg-rule">
+        <motion.span
+          className="absolute inset-0 origin-left bg-ink"
+          initial={false}
+          animate={{ scaleX: writing ? 1 : 0 }}
+          transition={enter()}
+        />
+      </span>
       <span className={`flex items-center gap-1.5 ${writing ? "text-ochre-ink" : "text-ink-faint"}`}>
         <span
           aria-hidden="true"

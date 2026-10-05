@@ -2,7 +2,9 @@
 
 // The question box, pinned to the bottom of the page. Enter asks, Shift+Enter adds a new
 // line. While an answer is streaming the button becomes Stop.
+import { AnimatePresence } from "motion/react";
 import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { SwapItem } from "@/components/Swap";
 
 const MAX_QUESTION_CHARS = 2_000; // the API's limit (query.validation.ts)
 const SHOW_COUNT_FROM = 1_800;
@@ -29,11 +31,23 @@ type Props = {
 export function AskForm({ busy, disabled, onAsk, onStop }: Props) {
   const [question, setQuestion] = useState("");
   const box = useRef<HTMLTextAreaElement>(null);
+  const askButton = useRef<HTMLButtonElement>(null);
+  const stopButton = useRef<HTMLButtonElement>(null);
   const trimmed = question.trim();
   const canAsk = !busy && !disabled && trimmed.length > 0;
 
   const resize = () => fitToContent(box.current);
   useLayoutEffect(() => fitToContent(box.current), []); // the empty box's first height
+
+  // Ask and Stop swap places. If the one leaving had focus, hand it on rather than let
+  // it drop to the page: Ask → Stop, and Stop → the box (Ask comes back disabled while
+  // the box is empty). A layout effect, so it runs before the browser notices the
+  // leaving button went inert and blurs it.
+  useLayoutEffect(() => {
+    const active = document.activeElement;
+    if (busy && active === askButton.current) stopButton.current?.focus();
+    if (!busy && active === stopButton.current) box.current?.focus();
+  }, [busy]);
 
   function submit(event?: FormEvent) {
     event?.preventDefault();
@@ -72,23 +86,34 @@ export function AskForm({ busy, disabled, onAsk, onStop }: Props) {
           onKeyDown={handleKeyDown}
           className="min-h-11 flex-1 resize-none overflow-y-hidden border border-ink-faint bg-paper px-3.5 py-2.5 font-serif text-lg leading-snug placeholder:text-ink-faint focus:border-ink focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mark disabled:cursor-not-allowed disabled:opacity-60"
         />
-        {busy ? (
-          <button
-            type="button"
-            onClick={onStop}
-            className="press h-11 shrink-0 border border-ink px-4 text-sm font-medium hover:border-mark hover:text-mark"
-          >
-            Stop
-          </button>
-        ) : (
-          <button
-            type="submit"
-            disabled={!canAsk}
-            className="press h-11 shrink-0 bg-ink px-5 text-sm font-medium text-paper hover:bg-mark disabled:cursor-not-allowed disabled:bg-ink-faint"
-          >
-            Ask
-          </button>
-        )}
+        {/* One fixed-width slot for both, so the box doesn't shift as they swap. */}
+        <div className="relative h-11 w-18 shrink-0">
+          <AnimatePresence mode="popLayout" initial={false}>
+            {busy ? (
+              <SwapItem key="stop" className="h-full" instantWhenReduced>
+                <button
+                  ref={stopButton}
+                  type="button"
+                  onClick={onStop}
+                  className="press size-full border border-ink text-sm font-medium hover:border-mark hover:text-mark"
+                >
+                  Stop
+                </button>
+              </SwapItem>
+            ) : (
+              <SwapItem key="ask" className="h-full" instantWhenReduced>
+                <button
+                  ref={askButton}
+                  type="submit"
+                  disabled={!canAsk}
+                  className="press size-full bg-ink text-sm font-medium text-paper hover:bg-mark disabled:cursor-not-allowed disabled:bg-ink-faint"
+                >
+                  Ask
+                </button>
+              </SwapItem>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
       <p className="mt-2 flex justify-between gap-4 font-mono text-[11px] text-ink-soft">
         <span className="hidden sm:inline">Enter to ask · Shift+Enter for a new line</span>
