@@ -53,8 +53,8 @@ export function Entry({ entry, revealFootnotes = false }: { entry: TranscriptEnt
 }
 
 // "Don't know": set as a margin note rather than an answer, so it never reads as one.
-// No footnotes: nothing in the documents backed it.
-function NotAnswered({ text, retrieval }: { text: string; retrieval?: RetrievalInfo }) {
+// No footnotes: nothing in the documents backed it. Also drawn by the landing page's demo.
+export function NotAnswered({ text, retrieval }: { text: string; retrieval?: RetrievalInfo }) {
   return (
     <div className="border-l-2 border-ochre pl-4">
       <p className="font-serif text-lg leading-relaxed text-ink-soft">{text}</p>

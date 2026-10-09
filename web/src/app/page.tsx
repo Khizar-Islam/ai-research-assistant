@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { PageTransition } from "@/components/PageTransition";
 import { auth } from "@/auth";
+import { AskDemo } from "@/components/landing/AskDemo";
 import { PipelineFigure } from "@/components/landing/PipelineFigure";
 import { Steps } from "@/components/landing/Steps";
 import { PRODUCT_NAME } from "@/lib/config";
@@ -74,6 +75,7 @@ export default async function Home() {
             How it works
           </h2>
           <Steps steps={STEPS} />
+          <AskDemo />
         </section>
 
         <footer className="border-t border-rule py-6 font-mono text-[11px] text-ink-soft">
