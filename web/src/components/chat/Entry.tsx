@@ -7,6 +7,7 @@ import type { RetrievalInfo } from "@/lib/types";
 import Link from "next/link";
 import { AnswerText } from "./AnswerText";
 import { Footnotes } from "./Footnotes";
+import { ListenButton } from "./ListenButton";
 import type { TranscriptEntry } from "./types";
 
 export function QuestionHeading({ id, question, time }: { id: string; question: string; time: string }) {
@@ -34,6 +35,9 @@ export function Entry({ entry, revealFootnotes = false }: { entry: TranscriptEnt
             {entry.truncated && (
               <p className="mt-2 font-mono text-[11px] text-ochre-ink">Cut off at the length limit.</p>
             )}
+            <p className="mt-3">
+              <ListenButton id={entry.id} text={entry.answer} />
+            </p>
             {entry.citations.length > 0 && (
               <motion.div
                 initial={revealFootnotes ? { opacity: 0, y: 8 } : false}

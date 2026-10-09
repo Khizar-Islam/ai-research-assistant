@@ -9,12 +9,9 @@
 // piece, fades in.
 import { motion } from "motion/react";
 import { Fragment, type ReactNode } from "react";
+import { MARKER_GROUP } from "@/lib/citations";
 import { citationKey, useCitations } from "./CitationContext";
 import type { EntryCitation } from "./types";
-
-// The backend's marker syntax (citations.ts): [1]  [1, 2]  [1,2,3]; [1][3] is two groups.
-// Includes the spaces before a group: footnote numbers sit right against the word.
-const MARKER_GROUP = /[ \t]*\[\s*\d+\s*(?:,\s*\d+\s*)*\]/g;
 
 type Props = {
   entryId: string;

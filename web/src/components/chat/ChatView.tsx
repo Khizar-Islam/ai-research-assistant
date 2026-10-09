@@ -7,6 +7,7 @@ import { AnimatePresence } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChunkPanel } from "@/components/documents/ChunkPanel";
 import { useAsk } from "@/lib/hooks/useAsk";
+import { stopSpeaking } from "@/lib/hooks/useSpeech";
 import { useDocuments } from "@/lib/hooks/useDocuments";
 import { useQueryHistory } from "@/lib/hooks/useQueries";
 import { AskForm } from "./AskForm";
@@ -64,8 +65,19 @@ export function ChatView() {
     if (following.current) window.scrollTo({ top: document.documentElement.scrollHeight });
   }, [growth]);
 
+  // An answer being read aloud stops when you leave /chat (in-app navigation unmounts
+  // this; closing or reloading the tab fires pagehide).
+  useEffect(() => {
+    window.addEventListener("pagehide", stopSpeaking);
+    return () => {
+      window.removeEventListener("pagehide", stopSpeaking);
+      stopSpeaking();
+    };
+  }, []);
+
   function askQuestion(question: string) {
     following.current = true; // asking always brings the new answer into view
+    stopSpeaking(); // a new question silences the old answer
     void ask(question);
   }
 
