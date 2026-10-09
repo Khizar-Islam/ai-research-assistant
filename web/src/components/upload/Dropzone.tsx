@@ -127,7 +127,7 @@ export function Dropzone({ onFiles, uploading, problems, onDismiss }: Props) {
               className="flex items-start gap-4 border-l-2 border-mark bg-paper-deep px-4 py-2.5"
             >
               <p className="min-w-0 flex-1">
-                <span className="font-medium break-words">{problem.filename}</span>{" "}
+                <span className="font-medium wrap-anywhere">{problem.filename}</span>{" "}
                 <span className="text-ink-soft">— {problem.message}</span>
               </p>
               <button type="button" onClick={() => onDismiss(problem.id)} className="text-ink-soft hover:text-ink">

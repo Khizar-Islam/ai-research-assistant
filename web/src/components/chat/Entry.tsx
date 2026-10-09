@@ -14,7 +14,7 @@ export function QuestionHeading({ id, question, time }: { id: string; question: 
   return (
     <>
       <p className="font-mono text-[11px] text-ink-soft">{time}</p>
-      <h2 id={id} className="mt-1 font-serif text-2xl leading-snug italic">
+      <h2 id={id} className="mt-1 font-serif text-2xl leading-snug wrap-anywhere italic">
         {question}
       </h2>
     </>
@@ -61,7 +61,7 @@ export function Entry({ entry, revealFootnotes = false }: { entry: TranscriptEnt
 export function NotAnswered({ text, retrieval }: { text: string; retrieval?: RetrievalInfo }) {
   return (
     <div className="border-l-2 border-ochre pl-4">
-      <p className="font-serif text-lg leading-relaxed text-ink-soft">{text}</p>
+      <p className="font-serif text-lg leading-relaxed wrap-anywhere text-ink-soft">{text}</p>
       <p className="mt-1.5 font-mono text-[11px] text-ochre-ink">
         <Reason retrieval={retrieval} />
       </p>

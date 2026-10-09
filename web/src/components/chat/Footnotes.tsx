@@ -42,20 +42,23 @@ export function Footnotes({ entryId, citations }: Props) {
             >
               <span className={`font-mono text-xs leading-5 ${gone ? "text-ink-faint" : "text-mark"}`}>{citation.marker}</span>
               <div className="min-w-0">
-                <p className="leading-5 [&>span]:whitespace-nowrap">
+                {/* The filename may break anywhere (a long one mustn't widen the page); each
+                    "· …" item after it stays whole. Set per span: a parent [&>span] rule would
+                    outrank the filename's own wrapping. */}
+                <p className="leading-5">
                   <span
-                    className={`font-medium break-all whitespace-normal ${gone ? "text-ink-soft line-through decoration-ink-faint" : ""}`}
+                    className={`font-medium wrap-anywhere ${gone ? "text-ink-soft line-through decoration-ink-faint" : ""}`}
                   >
                     {citation.filename}
                   </span>{" "}
-                  <span className="font-mono text-xs text-ink-soft">· §{citation.chunkIndex + 1}</span>{" "}
+                  <span className="font-mono text-xs whitespace-nowrap text-ink-soft">· §{citation.chunkIndex + 1}</span>{" "}
                   {gone ? (
-                    <span className="font-mono text-xs text-ochre-ink">· document deleted</span>
+                    <span className="font-mono text-xs whitespace-nowrap text-ochre-ink">· document deleted</span>
                   ) : (
-                    <span className="font-mono text-xs text-ink-soft">· {citation.similarity.toFixed(2)} similarity</span>
+                    <span className="font-mono text-xs whitespace-nowrap text-ink-soft">· {citation.similarity.toFixed(2)} similarity</span>
                   )}
                 </p>
-                <p className="mt-1 text-ink-soft">
+                <p className="mt-1 wrap-anywhere text-ink-soft">
                   {gone && <span className="font-mono text-[11px] text-ink-faint">Saved excerpt: </span>}
                   {citation.snippet}
                 </p>

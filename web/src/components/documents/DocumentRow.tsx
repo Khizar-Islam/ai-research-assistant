@@ -33,13 +33,13 @@ export function DocumentRow({ document, onDelete, onOpen, enterDelay, slideOnReo
       {/* Explicit grid positions at both sizes: phones put Remove beside the filename and
           the status underneath; wider screens use one row of filename · status · Remove. */}
       <div className="col-start-1 row-start-1 min-w-0">
-        <h2 className="truncate font-medium" title={filename}>
+        <h2 className="font-medium wrap-anywhere">
           {status === "ready" ? (
             <button
               type="button"
               onClick={(event) => onOpen(document, event.currentTarget)}
               aria-haspopup="dialog"
-              className="link-underline max-w-full truncate text-left hover:text-mark"
+              className="link-underline text-left wrap-anywhere hover:text-mark"
             >
               {filename}
             </button>
@@ -91,7 +91,7 @@ export function DocumentRow({ document, onDelete, onOpen, enterDelay, slideOnReo
       </AnimatePresence>
 
       {status === "failed" && errorMessage && (
-        <p className="col-span-full -mt-1 text-sm text-ink-soft">
+        <p className="col-span-full -mt-1 text-sm wrap-anywhere text-ink-soft">
           {stage ? `${STAGE_LABEL[stage]} failed: ` : ""}
           {errorMessage}
         </p>

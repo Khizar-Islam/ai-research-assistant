@@ -18,7 +18,8 @@ export function SiteHeader() {
   return (
     // Named for view transitions: it stays perfectly still while the page under it changes.
     <header className="border-b border-rule" style={{ viewTransitionName: "site-header" }}>
-      <div className="mx-auto flex h-16 max-w-5xl items-center gap-4 px-5 sm:gap-8 sm:px-8">
+      {/* gap-3 on phones: signed in, "Sign out" needs the room at 320px. */}
+      <div className="mx-auto flex h-16 max-w-5xl items-center gap-3 px-5 sm:gap-8 sm:px-8">
         <Link href="/" className="font-serif text-2xl tracking-tight">
           {PRODUCT_NAME}
           <sup className="ml-0.5 font-mono text-xs text-mark">1</sup>

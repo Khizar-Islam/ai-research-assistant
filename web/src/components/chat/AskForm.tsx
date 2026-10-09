@@ -4,7 +4,7 @@
 // line. While an answer is streaming the button becomes Stop. Where the browser can do
 // speech recognition, a mic button dictates into the box; nothing is asked until Ask.
 import { AnimatePresence } from "motion/react";
-import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { SwapItem } from "@/components/Swap";
 import { stopSpeaking } from "@/lib/hooks/useSpeech";
 import { useSpeechRecognition } from "@/lib/hooks/useSpeechRecognition";
@@ -15,11 +15,17 @@ const MAX_HEIGHT_PX = 168; // about six lines, then the box scrolls
 
 // Grow with the text, up to MAX_HEIGHT_PX; only then show a scrollbar. scrollHeight
 // leaves out the border, which the border-box height includes, so add it back.
+// An empty box fits its placeholder instead: on a phone "Ask about your documents" takes
+// two lines, and scrollHeight doesn't count placeholder text, so it's measured as if typed
+// (put back at once, in the same frame: nothing is ever drawn, and React's value is "").
 function fitToContent(element: HTMLTextAreaElement | null) {
   if (!element) return;
   element.style.height = "auto";
   const border = element.offsetHeight - element.clientHeight;
+  const empty = element.value === "";
+  if (empty) element.value = element.placeholder;
   const wanted = element.scrollHeight + border;
+  if (empty) element.value = "";
   element.style.height = `${Math.min(wanted, MAX_HEIGHT_PX)}px`;
   element.style.overflowY = wanted > MAX_HEIGHT_PX ? "auto" : "hidden";
 }
@@ -66,7 +72,16 @@ export function AskForm({ busy, disabled, onAsk, onStop }: Props) {
     stopSpeaking(); // the mic would hear an answer being read aloud
     voice.start();
   }
-  useLayoutEffect(() => fitToContent(box.current), []); // the empty box's first height
+  // The first height, again when the placeholder changes (documents loaded or all removed),
+  // whenever the width changes the wrapping (a phone turned sideways), and once the serif
+  // font has loaded: it sets wider than the fallback, so the placeholder may only wrap then.
+  useLayoutEffect(() => fitToContent(box.current), [disabled]);
+  useEffect(() => {
+    const refit = () => fitToContent(box.current);
+    void document.fonts?.ready.then(refit);
+    window.addEventListener("resize", refit);
+    return () => window.removeEventListener("resize", refit);
+  }, []);
 
   // Ask and Stop swap places. If the one leaving had focus, hand it on rather than let
   // it drop to the page: Ask → Stop, and Stop → the box (Ask comes back disabled while
@@ -117,7 +132,7 @@ export function AskForm({ busy, disabled, onAsk, onStop }: Props) {
             resize();
           }}
           onKeyDown={handleKeyDown}
-          className="min-h-11 flex-1 resize-none overflow-y-hidden border border-ink-faint bg-paper px-3.5 py-2.5 font-serif text-lg leading-snug placeholder:text-ink-faint focus:border-ink focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mark disabled:cursor-not-allowed disabled:opacity-60 read-only:border-mark"
+          className="min-h-11 min-w-0 flex-1 resize-none overflow-y-hidden border border-ink-faint bg-paper px-3.5 py-2.5 font-serif text-lg leading-snug placeholder:text-ink-faint focus:border-ink focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mark disabled:cursor-not-allowed disabled:opacity-60 read-only:border-mark"
         />
         {voice.supported && (
           <MicButton listening={voice.listening} disabled={disabled} onClick={toggleListening} />

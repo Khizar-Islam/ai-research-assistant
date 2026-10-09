@@ -33,30 +33,40 @@ export function AnswerText({ entryId, text, citations, fadeFrom, trailing }: Pro
       {node}
     </motion.span>
   );
-  const pushText = (start: number, end: number) => {
-    if (fadeFrom === undefined || end <= fadeFrom) parts.push(text.slice(start, end));
-    else if (start >= fadeFrom) parts.push(fresh(text.slice(start, end), `t${start}`));
-    else parts.push(text.slice(start, fadeFrom), fresh(text.slice(fadeFrom, end), `t${fadeFrom}`));
+  const textNodes = (start: number, end: number): ReactNode[] => {
+    if (fadeFrom === undefined || end <= fadeFrom) return [text.slice(start, end)];
+    if (start >= fadeFrom) return [fresh(text.slice(start, end), `t${start}`)];
+    return [text.slice(start, fadeFrom), fresh(text.slice(fadeFrom, end), `t${fadeFrom}`)];
   };
 
   for (const match of text.matchAll(MARKER_GROUP)) {
     const numbers = match[0].trim().slice(1, -1).split(",").map((n) => Number(n.trim()));
     if (!numbers.every((n) => byMarker.has(n))) continue; // not (yet) a real citation
-    pushText(last, match.index);
+    // The end of the word before the markers stays on one line with them: browsers may
+    // break before a button as if at a space, which on a phone left a lone "1" starting
+    // the next line. At most its last 12 characters, so a long URL can still break
+    // (wrap-anywhere) before that tail.
+    const wordOffset = text.slice(last, match.index).search(/\S*$/);
+    const wordStart = Math.max(last + wordOffset, match.index - 12);
+    parts.push(...textNodes(last, wordStart));
     const markers = numbers.map((n, i) => <Marker key={n} entryId={entryId} citation={byMarker.get(n)!} separator={i > 0} />);
     parts.push(
-      fadeFrom !== undefined && match.index >= fadeFrom ? (
-        fresh(markers, `m${match.index}`)
-      ) : (
-        <Fragment key={`m${match.index}`}>{markers}</Fragment>
-      ),
+      <span key={`w${match.index}`} className="whitespace-nowrap">
+        {textNodes(wordStart, match.index)}
+        {fadeFrom !== undefined && match.index >= fadeFrom ? (
+          fresh(markers, `m${match.index}`)
+        ) : (
+          <Fragment key={`m${match.index}`}>{markers}</Fragment>
+        )}
+      </span>,
     );
     last = match.index + match[0].length;
   }
-  pushText(last, text.length);
+  parts.push(...textNodes(last, text.length));
 
   return (
-    <p className="font-serif text-lg leading-relaxed whitespace-pre-line">
+    // wrap-anywhere: a quoted URL or email may break mid-token rather than widen the page.
+    <p className="font-serif text-lg leading-relaxed wrap-anywhere whitespace-pre-line">
       {parts}
       {trailing}
     </p>

@@ -130,7 +130,8 @@ export function ChunkPanel({ document, onClose, focusChunkIndex }: Props) {
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="font-mono text-[11px] tracking-wide text-ink-soft uppercase">Passages</p>
-              <h2 id="chunk-panel-title" className="mt-1 truncate font-serif text-2xl" title={document.filename}>
+              {/* Wraps rather than truncates: on a touch screen the title tooltip can't be read. */}
+              <h2 id="chunk-panel-title" className="mt-1 font-serif text-2xl wrap-anywhere">
                 {document.filename}
               </h2>
             </div>
@@ -201,7 +202,7 @@ export function ChunkPanel({ document, onClose, focusChunkIndex }: Props) {
                 {chunk.charCount.toLocaleString("en-US")} characters
                 {chunk.chunkIndex === focusChunkIndex && <span className="text-mark"> · cited in the answer</span>}
               </p>
-              <p className="mt-2 text-sm leading-relaxed whitespace-pre-wrap">{chunk.content}</p>
+              <p className="mt-2 text-sm leading-relaxed wrap-anywhere whitespace-pre-wrap">{chunk.content}</p>
             </article>
           ))}
         </div>

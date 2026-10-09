@@ -149,13 +149,17 @@ function Drawing({ play, still }: { play: boolean; still: boolean }) {
   );
 }
 
+// On phones (under 480px) the label sits above its step, so the drawing gets the full
+// width; from 480px it moves into a column of its own. minmax(0, 1fr) and min-w-0 let the
+// content column shrink to fit, so a long word wraps instead of pushing the figure wider.
+// The left padding is room for the passages' § marks, which hang outside them.
 function Step({ number, label, children }: { number: string; label: string; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[5.5rem_1fr] items-start gap-4 sm:grid-cols-[7rem_1fr]">
-      <p className="pt-0.5 font-mono text-[11px] leading-tight text-ink-soft">
+    <div className="items-start gap-4 min-[480px]:grid min-[480px]:grid-cols-[5.5rem_minmax(0,1fr)] sm:grid-cols-[7rem_minmax(0,1fr)]">
+      <p className="mb-2 pt-0.5 font-mono text-[11px] leading-tight text-ink-soft min-[480px]:mb-0">
         <span className="text-ink">{number}</span> {label}
       </p>
-      <div className="pl-6">{children}</div>
+      <div className="min-w-0 pl-7 min-[480px]:pl-6">{children}</div>
     </div>
   );
 }
