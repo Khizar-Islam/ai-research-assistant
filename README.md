@@ -6,7 +6,13 @@ Upload your own PDFs and text files, ask questions in plain language, and get an
 
 > Sign-in is limited to approved Google accounts while the app is in testing mode. To try it, email khizarislamrathore@gmail.com with your Gmail address and I'll add you. The API runs on a free host, so the first load after a quiet period can take up to a minute.
 
-<!-- Add 2-3 screenshots here (docs/ folder): dashboard with the chunk strip, a chat answer with footnotes, the passages panel -->
+![Landing page: ask your documents, every answer cites its source](docs/home.png)
+
+![How it works: a question, the passages found and the answer being written](docs/how-it-works.png)
+
+![An answer with footnote markers and the cited passage](docs/chat-answer.png)
+
+![The passages panel, opened from a citation](docs/passages-panel.png)
 
 ## What it does
 
