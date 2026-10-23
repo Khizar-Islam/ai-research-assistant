@@ -8,6 +8,7 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma.ts";
 import { userIdOf } from "../lib/requestUser.ts";
 import { requireAuth } from "../middleware/auth.ts";
+import { askLimiters } from "../middleware/rateLimit.ts";
 import { AiServiceError } from "../services/aiRetry.ts";
 import { answerer } from "../services/answering.ts";
 import { type Citation, markAvailability } from "../services/citations.ts";
@@ -18,7 +19,7 @@ import { createQueryStreamHandler } from "./queryStream.ts";
 export const queryRouter = Router();
 queryRouter.use(requireAuth);
 
-queryRouter.post("/", async (req, res) => {
+queryRouter.post("/", ...askLimiters, async (req, res) => {
   const parsed = parseQueryRequest(req.body);
   if (!parsed.ok) {
     res.status(400).json({ error: parsed.error });
@@ -39,7 +40,7 @@ queryRouter.post("/", async (req, res) => {
 });
 
 // POST /api/query/stream — the same, as server-sent events (see queryStream.ts).
-queryRouter.post("/stream", createQueryStreamHandler(answerer));
+queryRouter.post("/stream", ...askLimiters, createQueryStreamHandler(answerer));
 
 export const historyRouter = Router();
 historyRouter.use(requireAuth);

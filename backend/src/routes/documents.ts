@@ -5,6 +5,7 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma.ts";
 import { userIdOf } from "../lib/requestUser.ts";
 import { requireAuth } from "../middleware/auth.ts";
+import { uploadLimiters } from "../middleware/rateLimit.ts";
 import { checkFileType, receiveUpload } from "../middleware/upload.ts";
 import { estimateTokens } from "../services/ingest/chunk.ts";
 import { ingestDocument, type IngestStage } from "../services/ingest/pipeline.ts";
@@ -27,7 +28,7 @@ const documentFields = {
 } as const;
 
 // POST /api/documents/upload — multipart/form-data, one file in field "file".
-documentsRouter.post("/upload", receiveUpload, async (req, res) => {
+documentsRouter.post("/upload", ...uploadLimiters, receiveUpload, async (req, res) => {
   const file = req.file!; // receiveUpload guarantees it
   const check = checkFileType(file);
   if (!check.ok) {

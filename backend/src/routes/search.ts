@@ -7,6 +7,7 @@
 import { Router } from "express";
 import { userIdOf } from "../lib/requestUser.ts";
 import { requireAuth } from "../middleware/auth.ts";
+import { searchLimiters } from "../middleware/rateLimit.ts";
 import { AiServiceError } from "../services/aiRetry.ts";
 import { retrieveChunks } from "../services/retrieval.ts";
 import { aiErrorResponse } from "./aiErrors.ts";
@@ -16,7 +17,7 @@ export const searchRouter = Router();
 
 searchRouter.use(requireAuth);
 
-searchRouter.post("/", async (req, res) => {
+searchRouter.post("/", ...searchLimiters, async (req, res) => {
   const parsed = parseSearchRequest(req.body);
   if (!parsed.ok) {
     res.status(400).json({ error: parsed.error });
