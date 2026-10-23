@@ -4,7 +4,7 @@ Upload your own PDFs and text files, ask questions in plain language, and get an
 
 **Live demo:** https://ai-research-assistant-lac-two.vercel.app
 
-> Sign-in is limited to approved Google accounts while the app is in testing mode. To try it, email khizarislamrathore@gmail.com with your Gmail address and I'll add you. The API runs on a free host, so the first load after a quiet period can take up to a minute.
+> Sign in with any Google account. Your documents and questions are private to your account (details on the [privacy page](https://ai-research-assistant-lac-two.vercel.app/privacy)), and the app limits how many questions and uploads each account can make per day. The API runs on a free host, so the first load after a quiet period can take up to a minute.
 
 ![Landing page: ask your documents, every answer cites its source](docs/home.png)
 

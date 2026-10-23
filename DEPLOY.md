@@ -63,8 +63,13 @@ Never set `AUTH_DEV_LOGIN` on Vercel: a production build that sees it refuses to
 5. **Google Cloud Console** → Credentials → the OAuth client (keep the localhost entries):
    - Authorized JavaScript origin: `https://<project>.vercel.app`
    - Authorized redirect URI: `https://<project>.vercel.app/api/auth/callback/google`
-   - OAuth consent screen stays in **Testing**: only listed test users can sign in. Add
-     anyone who should try the app (e.g. a recruiter's Google address) under Test users.
+   - OAuth consent screen is **In production** (Google Auth Platform → Audience → Publish
+     app), so any Google account can sign in. Publishing needs, under Branding: app name,
+     support email, home page, privacy policy link (`/privacy`), an authorised domain
+     (the full `<project>.vercel.app` host) and a developer contact email. The app asks
+     only for name, email and picture, so Google needs no verification review. Abuse is
+     capped by the API's rate limits (`backend/src/middleware/rateLimit.ts`), not by who
+     can sign in. Setting the status back to Testing limits sign-in to listed test users.
 6. **Smoke test** on the Vercel URL: sign-in offers only Google (no Dev Tester); sign in;
    upload a small `.txt`, watch it reach Ready; ask a question, check the citations.
 
@@ -97,5 +102,5 @@ Never set `AUTH_DEV_LOGIN` on Vercel: a production build that sees it refuses to
 | "Can't reach the server at …" | `NEXT_PUBLIC_API_URL` wrong, or set after the build: redeploy Vercel |
 | "The server didn't accept your sign-in" | `API_JWT_SECRET` differs between Render and Vercel |
 | Google: `redirect_uri_mismatch` | Redirect URI in Google Cloud doesn't match the Vercel URL exactly |
-| Google: "access blocked" / not allowed | The account isn't a test user (consent screen in Testing) |
+| Google: "access blocked" / not allowed | The consent screen is back in Testing and the account isn't a listed test user, or the Branding details were removed |
 | `/api/health` 503 | Supabase project paused, or a wrong `DATABASE_URL` |
