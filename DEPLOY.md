@@ -28,6 +28,7 @@ fresh ones for production, not your local values.
 | `API_JWT_SECRET` | Same value as on Vercel |
 | `CORS_ORIGIN` | The Vercel URL: `https://…`, no path, no trailing slash |
 | `GEMINI_CHAT_MODEL` | Optional (defaults to `gemini-3.5-flash-lite`) |
+| `TRUST_PROXY_HOPS` | Optional: number of proxies in front of the API, 0 to 5, default 0 |
 
 Don't set `PORT`: Render provides it.
 

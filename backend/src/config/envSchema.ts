@@ -45,6 +45,14 @@ const EnvSchema = z
     // Set by Render itself on its servers; never set by hand. Only used to tell "running
     // on Render" apart from "running on a laptop".
     RENDER: z.string().optional(),
+
+    // Number of proxies in front of the API, 0 to 5 (default 0 = trust proxy off). With
+    // the right count, req.ip is the visitor's address, which the per-IP rate limit
+    // counts on. A bad value falls back to 0 with a warning instead of stopping the server.
+    TRUST_PROXY_HOPS: z
+      .string()
+      .optional()
+      .transform((raw) => parseTrustProxyHops(raw).hops),
   })
   .superRefine((env, ctx) => {
     const production = env.NODE_ENV === "production";
@@ -101,9 +109,24 @@ function originProblem(origin: string, production: boolean): string | null {
   return null;
 }
 
+// "" or unset → 0. A whole number 0–5 (spaces allowed around it) → that number. Anything
+// else → 0, plus a warning saying why.
+export function parseTrustProxyHops(raw: string | undefined): { hops: number; warning?: string } {
+  const value = raw?.trim() ?? "";
+  if (value === "") return { hops: 0 };
+  if (/^\d+$/.test(value) && Number(value) <= 5) return { hops: Number(value) };
+  return {
+    hops: 0,
+    warning: `TRUST_PROXY_HOPS=${JSON.stringify(value.slice(0, 40))} is not a whole number from 0 to 5; using 0 (trust proxy off).`,
+  };
+}
+
 // The validated environment, or a readable list of what's wrong (names and reasons only,
-// never the values of secrets).
-export function parseEnv(source: Record<string, string | undefined>): { env: Env } | { error: string } {
+// never the values of secrets). `warnings` are problems worth logging that don't stop the
+// server.
+export function parseEnv(source: Record<string, string | undefined>): { env: Env; warnings: string[] } | { error: string } {
   const parsed = EnvSchema.safeParse(source);
-  return parsed.success ? { env: parsed.data } : { error: z.prettifyError(parsed.error) };
+  if (!parsed.success) return { error: z.prettifyError(parsed.error) };
+  const { warning } = parseTrustProxyHops(source.TRUST_PROXY_HOPS);
+  return { env: parsed.data, warnings: warning ? [warning] : [] };
 }

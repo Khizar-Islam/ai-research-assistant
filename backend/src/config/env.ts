@@ -11,5 +11,6 @@ if ("error" in result) {
   console.error("Invalid environment variables:\n" + result.error);
   process.exit(1);
 }
+for (const warning of result.warnings) console.warn(`[env] ${warning}`);
 
 export const env = result.env;

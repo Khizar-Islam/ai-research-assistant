@@ -13,9 +13,10 @@ import { searchRouter } from "./routes/search.ts";
 export function createApp() {
   const app = express();
 
-  // On Render the API sits behind one proxy, so the caller's address is the last entry in
-  // X-Forwarded-For. Without this every visitor would look like the proxy and share one limit.
-  if (env.NODE_ENV === "production") app.set("trust proxy", 1);
+  // How many proxies sit in front of the API (TRUST_PROXY_HOPS, default 0 = off). With the
+  // right count req.ip is the visitor's address; with too few, every visitor looks like the
+  // nearest proxy and shares one per-IP limit.
+  if (env.TRUST_PROXY_HOPS > 0) app.set("trust proxy", env.TRUST_PROXY_HOPS);
 
   app.use(cors({ origin: env.CORS_ORIGIN }));
   app.use(express.json({ limit: "1mb" }));
