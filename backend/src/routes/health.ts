@@ -10,23 +10,7 @@ type HealthRow = {
   cosine_distance: number;
 };
 
-healthRouter.get("/", async (req, res) => {
-  // TEMPORARY - remove after measuring. Shows which address req.ip resolves to under the
-  // current TRUST_PROXY_HOPS. Only when ?probe= is given (Render's own health checks call
-  // this route every few seconds), only to the log, never in the response.
-  if (typeof req.query.probe === "string") {
-    console.log(
-      "[ip-diag] " +
-        JSON.stringify({
-          probe: req.query.probe.slice(0, 100),
-          ip: req.ip,
-          ips: req.ips,
-          xForwardedFor: req.get("x-forwarded-for")?.slice(0, 500) ?? null,
-          trustProxy: req.app.get("trust proxy"),
-        }),
-    );
-  }
-
+healthRouter.get("/", async (_req, res) => {
   const startedAt = performance.now();
 
   try {
