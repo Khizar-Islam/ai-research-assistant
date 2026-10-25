@@ -91,7 +91,13 @@ function goToSignIn() {
 async function apiFetch<T>(path: string, init: RequestInit = {}, options: Options = {}): Promise<T> {
   const response = await request(path, init, options);
   if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
+  try {
+    return (await response.json()) as T;
+  } catch (error) {
+    // Not JSON (e.g. a proxy's HTML page sent with a 200): a fixed message, not a SyntaxError.
+    if (isAbort(error)) throw error;
+    throw new ApiError(response.status, `Unexpected reply from the server (${response.status})`);
+  }
 }
 
 export const isAbort = (error: unknown) => error instanceof DOMException && error.name === "AbortError";
