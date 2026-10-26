@@ -86,6 +86,10 @@ Never set `AUTH_DEV_LOGIN` on Vercel: a production build that sees it refuses to
   minute. The web app shows "Waking the server up…" meanwhile. 512 MB of memory: very
   large PDFs may fail. A redeploy or sleep stops any document mid-processing; it is marked
   failed on the next start and can be uploaded again.
+- **Uploads processing at once** are capped at 3 per user and 3 per server (to stay inside
+  512 MB; `backend/src/middleware/uploadSlots.ts`). Counted in memory, so the count resets
+  on restart. Over the cap, the upload is refused with a "try again" message. If a parse
+  hangs, its slot is freed automatically after 30 minutes.
 - **Supabase pauses** a project after ~7 days of no activity. `/api/health` then returns
   503; resume it from the Supabase dashboard.
 - **Gemini free tier** has per-minute and per-day limits, and Google may use free-tier
