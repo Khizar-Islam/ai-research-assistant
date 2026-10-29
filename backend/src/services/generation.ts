@@ -16,6 +16,7 @@ import {
   type RetryOptions,
   type RetryPolicy,
   retryDepsFrom,
+  seconds,
   throwIfCancelled,
   withRetry,
 } from "./aiRetry.ts";
@@ -24,8 +25,18 @@ export const REFUSAL = "I couldn't find the answer to that in your documents.";
 export const MAX_OUTPUT_TOKENS = 1_024; // a few sentences need ~30–100; this only stops runaways
 const REQUEST_TIMEOUT_MS = 30_000;
 
+// One deadline per question for the answer model and its fallback together. The API sits
+// behind Cloudflare, which cuts a request off at 100 s (the non-streamed answer has no
+// heartbeat), and nobody should wait longer than this anyway. Each attempt's timeout is
+// cut to whatever is left of it.
+export const ANSWER_DEADLINE_MS = 85_000;
+// The fallback model isn't tried with less than this left: too little for an answer.
+export const MIN_FALLBACK_MS = 10_000;
+
 // A question has someone waiting for the answer: retry briefly, then fail with "busy".
 const GENERATION_POLICY: RetryPolicy = { maxAttempts: 3, maxWaitMs: 5_000, totalBudgetMs: 45_000 };
+// The fallback model gets fewer tries, and only what's left of ANSWER_DEADLINE_MS.
+const FALLBACK_POLICY: RetryPolicy = { maxAttempts: 2, maxWaitMs: 5_000, totalBudgetMs: ANSWER_DEADLINE_MS };
 // Once streamed text has reached the user, a retry would make the answer start over, so
 // a failure ends the answer instead. One attempt: errors are still classified (busy,
 // unavailable, rejected) with the same messages, just never retried.
@@ -71,7 +82,7 @@ function escapeAttribute(value: string): string {
 
 // ── Calling the model ────────────────────────────────────────────────────────────────
 
-export type GenerateRequest = { model: string; systemInstruction: string; prompt: string };
+export type GenerateRequest = { model: string; systemInstruction: string; prompt: string; timeoutMs: number };
 export type RawGeneration = {
   text: string;
   finishReason?: string; // "STOP", "MAX_TOKENS", "SAFETY", ...
@@ -84,13 +95,16 @@ export type GenerateCall = (request: GenerateRequest) => Promise<RawGeneration>;
 export type RawGenerationChunk = Partial<RawGeneration>;
 export type GenerateStreamCall = (request: GenerateRequest, signal?: AbortSignal) => Promise<AsyncIterable<RawGenerationChunk>>;
 
-// Settings shared by the streaming and non-streaming calls.
-function generationConfig(systemInstruction: string, signal?: AbortSignal) {
-  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+// Settings shared by the streaming and non-streaming calls, and by the answer model and
+// its fallback: nothing here depends on the model.
+function generationConfig(systemInstruction: string, timeoutMs: number, signal?: AbortSignal) {
+  const timeout = AbortSignal.timeout(timeoutMs);
   return {
     systemInstruction,
     // LOW: flash-lite used 0 thinking tokens on simple questions and ~500 on a false
-    // premise in testing. "MINIMAL" isn't accepted by every model (3.8-flash rejects it).
+    // premise in testing. "MINIMAL" isn't accepted by every model (3.8-flash rejects it);
+    // LOW is, including both 3.5-flash-lite and the 3.6-flash fallback (Google's thinking
+    // docs, Oct 2026).
     thinkingConfig: { thinkingLevel: "LOW" as never },
     maxOutputTokens: MAX_OUTPUT_TOKENS,
     // Stops at our timeout, or as soon as a streaming client disconnects.
@@ -111,18 +125,18 @@ function toRaw(response: GenerateContentResponse): RawGeneration {
   };
 }
 
-const geminiGenerate: GenerateCall = async ({ model, systemInstruction, prompt }) => {
+const geminiGenerate: GenerateCall = async ({ model, systemInstruction, prompt, timeoutMs }) => {
   // Imported lazily so loading this module (e.g. in unit tests) doesn't require a key.
   const { gemini } = await import("../lib/gemini.ts");
-  return toRaw(await gemini.models.generateContent({ model, contents: prompt, config: generationConfig(systemInstruction) }));
+  return toRaw(await gemini.models.generateContent({ model, contents: prompt, config: generationConfig(systemInstruction, timeoutMs) }));
 };
 
-const geminiGenerateStream: GenerateStreamCall = async ({ model, systemInstruction, prompt }, signal) => {
+const geminiGenerateStream: GenerateStreamCall = async ({ model, systemInstruction, prompt, timeoutMs }, signal) => {
   const { gemini } = await import("../lib/gemini.ts");
   const stream = await gemini.models.generateContentStream({
     model,
     contents: prompt,
-    config: generationConfig(systemInstruction, signal),
+    config: generationConfig(systemInstruction, timeoutMs, signal),
   });
   return (async function* () {
     for await (const response of stream) yield toRaw(response);
@@ -181,33 +195,77 @@ export type GeneratorDeps = Partial<RetryDeps> & {
   generate?: GenerateCall;
   generateStream?: GenerateStreamCall;
   model?: string; // default: GEMINI_CHAT_MODEL from the environment
+  // Default: GEMINI_CHAT_FALLBACK_MODEL from the environment. An injected `model` with no
+  // injected fallback means no fallback, so tests never read the real environment.
+  fallbackModel?: string;
 };
 
 export function createGenerator(deps: GeneratorDeps = {}) {
   const generate = deps.generate ?? geminiGenerate;
   const generateStream = deps.generateStream ?? geminiGenerateStream;
   const retryDeps = retryDepsFrom(deps);
+  const { now, log } = retryDeps;
 
-  async function resolveModel(): Promise<string> {
-    if (deps.model) return deps.model;
+  async function resolveModels(): Promise<{ primary: string; fallback: string }> {
+    if (deps.model) return { primary: deps.model, fallback: deps.fallbackModel ?? deps.model };
     const { env } = await import("../config/env.ts");
-    return env.GEMINI_CHAT_MODEL;
+    return { primary: env.GEMINI_CHAT_MODEL, fallback: deps.fallbackModel ?? env.GEMINI_CHAT_FALLBACK_MODEL };
   }
 
-  const retryOptions = (policy: RetryPolicy): RetryOptions => ({
+  const retryOptions = (policy: RetryPolicy, deadline: number, attemptLabel?: string): RetryOptions => ({
     policy,
-    deadline: retryDeps.now() + policy.totalBudgetMs,
+    deadline,
     logTag: "generation",
     serviceName: "Answer generation",
     makeError: (code, message, options) => new GenerationError(code, message, options),
+    attemptLabel,
   });
+
+  // Up to REQUEST_TIMEOUT_MS, but never past the deadline.
+  const requestTimeout = (deadline: number) => Math.max(1, Math.min(REQUEST_TIMEOUT_MS, deadline - now()));
+
+  // Runs `attempt` on the answer model with retries. If that ends "unavailable" (5xx,
+  // timeout or network failure; never a 429 or other 4xx), runs it again on the fallback
+  // model with what's left of ANSWER_DEADLINE_MS. Each request's timeout is cut so no
+  // attempt runs past the deadline.
+  async function withFallback<T>(
+    question: string,
+    sources: PromptSource[],
+    attempt: (request: GenerateRequest) => Promise<T>,
+  ): Promise<{ result: T; model: string }> {
+    const { primary, fallback } = await resolveModels();
+    const prompt = buildUserPrompt(question, sources);
+    const started = now();
+    const deadline = started + ANSWER_DEADLINE_MS;
+
+    const run = async (model: string, policy: RetryPolicy, runDeadline: number) => {
+      const result = await withRetry(
+        () => attempt({ model, systemInstruction: SYSTEM_INSTRUCTION, prompt, timeoutMs: requestTimeout(runDeadline) }),
+        retryOptions(policy, runDeadline, model),
+        retryDeps,
+      );
+      return { result, model };
+    };
+
+    try {
+      return await run(primary, GENERATION_POLICY, Math.min(started + GENERATION_POLICY.totalBudgetMs, deadline));
+    } catch (error) {
+      if (!(error instanceof GenerationError) || error.code !== "unavailable" || fallback === primary) throw error;
+      const left = deadline - now();
+      if (left < MIN_FALLBACK_MS) {
+        log(`[generation] ${primary} unavailable; not trying ${fallback}, only ${seconds(left)} of the deadline left`);
+        throw error;
+      }
+      log(`[generation] ${primary} unavailable; falling back to ${fallback} (${seconds(left)} left)`);
+      return await run(fallback, FALLBACK_POLICY, deadline);
+    }
+  }
 
   return {
     // `sources[i]` becomes source number i + 1 in the prompt (and [i + 1] in the answer).
     async generateAnswer(question: string, sources: PromptSource[]): Promise<Generated> {
-      const model = await resolveModel();
-      const request: GenerateRequest = { model, systemInstruction: SYSTEM_INSTRUCTION, prompt: buildUserPrompt(question, sources) };
-      return withRetry(async () => interpret(await generate(request), model), retryOptions(GENERATION_POLICY), retryDeps);
+      const { result } = await withFallback(question, sources, async (request) => interpret(await generate(request), request.model));
+      return result;
     },
 
     // The same answer, streamed: `onDelta` gets each piece of text as the model writes it.
@@ -220,8 +278,6 @@ export function createGenerator(deps: GeneratorDeps = {}) {
       onDelta: (text: string) => void | Promise<void>,
       signal?: AbortSignal,
     ): Promise<Generated> {
-      const model = await resolveModel();
-      const request: GenerateRequest = { model, systemInstruction: SYSTEM_INSTRUCTION, prompt: buildUserPrompt(question, sources) };
       let raw: RawGeneration = { text: "" };
       let pieces: AsyncIterator<RawGenerationChunk> | undefined;
 
@@ -240,8 +296,9 @@ export function createGenerator(deps: GeneratorDeps = {}) {
         };
 
       // Until the first text arrives nothing has reached the user, so failures here are
-      // retried exactly like generateAnswer's, each attempt with a fresh stream.
-      const first = await withRetry(
+      // retried exactly like generateAnswer's, each attempt with a fresh stream, and can
+      // move on to the fallback model.
+      const { result: first, model } = await withFallback(question, sources, (request) =>
         cancellable(async () => {
           raw = { text: "" };
           pieces = (await generateStream(request, signal))[Symbol.asyncIterator]();
@@ -250,14 +307,13 @@ export function createGenerator(deps: GeneratorDeps = {}) {
             if (next.value.text) return next.value.text;
           }
           return ""; // ended without any text: interpret() below says why
-        }),
-        retryOptions(GENERATION_POLICY),
-        retryDeps,
+        })(),
       );
 
       if (first) {
         raw.text = first;
         await onDelta(first);
+        // Text has reached the user: one attempt, and no fallback.
         await withRetry(
           cancellable(async () => {
             for (let next = await pieces!.next(); !next.done; next = await pieces!.next()) {
@@ -267,7 +323,7 @@ export function createGenerator(deps: GeneratorDeps = {}) {
               await onDelta(next.value.text);
             }
           }),
-          retryOptions(NO_RETRY_POLICY),
+          retryOptions(NO_RETRY_POLICY, now()),
           retryDeps,
         );
       }

@@ -28,6 +28,7 @@ fresh ones for production, not your local values.
 | `API_JWT_SECRET` | Same value as on Vercel |
 | `CORS_ORIGIN` | The Vercel URL: `https://…`, no path, no trailing slash |
 | `GEMINI_CHAT_MODEL` | Optional (defaults to `gemini-3.5-flash-lite`) |
+| `GEMINI_CHAT_FALLBACK_MODEL` | Optional (defaults to `gemini-3.6-flash`). Tried automatically when the answer model stays unavailable (5xx, timeout) before any answer text is sent. Set it to the same value as `GEMINI_CHAT_MODEL` to turn the fallback off. |
 | `TRUST_PROXY_HOPS` | `3` on Render (measured: visitor, Cloudflare, Render's proxy). Number of proxies in front of the API, 0 to 5, default 0 elsewhere. Too low: every visitor shares one rate-limit counter. Too high: visitors can fake their IP by sending their own `X-Forwarded-For`. |
 
 Don't set `PORT`: Render provides it.

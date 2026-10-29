@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { ApiError } from "@google/genai";
 import { RequestCancelledError } from "./aiRetry.ts";
 import {
+  ANSWER_DEADLINE_MS,
   buildUserPrompt,
   createGenerator,
   type GenerateCall,
@@ -45,6 +46,7 @@ function fakeTime() {
       t += ms;
     },
     log: (message: string) => logs.push(message),
+    advance: (ms: number) => void (t += ms), // time spent inside a (fake) model call
   };
 }
 
@@ -151,7 +153,7 @@ describe("generateAnswer", () => {
     const result = await createGenerator({ generate: model.generate, model: "m", ...time }).generateAnswer("q", SOURCES);
     assert.equal(result.text, "OK [1].");
     assert.deepEqual(time.waits, [1000]);
-    assert.deepEqual(time.logs, ["[generation] service error (503), waiting 1s (attempt 2/3)"]);
+    assert.deepEqual(time.logs, ["[generation] m attempt 1/3: service error (503), waiting 1s", "[generation] m attempt 2/3: ok"]);
   });
 
   it("fails fast with 'rate_limited' on a per-minute 429 (someone is waiting)", async () => {
@@ -284,5 +286,178 @@ describe("streamAnswer", () => {
     const { result, requests } = await run(() => [{ text: "x" }], cancel.signal);
     await assert.rejects(result, RequestCancelledError);
     assert.equal(requests.length, 0);
+  });
+});
+
+describe("fallback model", () => {
+  const PRIMARY = "primary-model";
+  const FALLBACK = "fallback-model";
+  // What the SDK throws when our AbortSignal.timeout fires: no HTTP status.
+  const timeoutError = () => Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
+
+  // A fake model whose result depends on which model was asked.
+  function fakeModels(respond: (request: GenerateRequest) => RawGeneration | Error, time = fakeTime()) {
+    const requests: GenerateRequest[] = [];
+    const generate: GenerateCall = async (request) => {
+      requests.push(request);
+      const result = respond(request);
+      if (result instanceof Error) throw result;
+      return result;
+    };
+    const generator = createGenerator({ generate, model: PRIMARY, fallbackModel: FALLBACK, ...time });
+    return { requests, generator, time, models: () => requests.map((r) => r.model) };
+  }
+
+  it("answers with the fallback after the primary stays down, with the same prompt and settings", async () => {
+    const { generator, requests, time, models } = fakeModels((r) => (r.model === PRIMARY ? apiError(503) : answer("From the fallback [1].")));
+    const result = await generator.generateAnswer("Who?", SOURCES);
+
+    assert.equal(result.text, "From the fallback [1].");
+    assert.equal(result.model, FALLBACK);
+    assert.deepEqual(models(), [PRIMARY, PRIMARY, PRIMARY, FALLBACK]);
+    const { model: _p, ...primaryRequest } = requests[0]!;
+    const { model: _f, ...fallbackRequest } = requests[3]!;
+    assert.deepEqual(fallbackRequest, primaryRequest, "only the model differs");
+    assert.deepEqual(time.logs, [
+      `[generation] ${PRIMARY} attempt 1/3: service error (503), waiting 1s`,
+      `[generation] ${PRIMARY} attempt 2/3: service error (503), waiting 2s`,
+      `[generation] ${PRIMARY} attempt 3/3: service error (503), giving up`,
+      `[generation] ${PRIMARY} unavailable; falling back to ${FALLBACK} (82s left)`,
+      `[generation] ${FALLBACK} attempt 1/2: ok`,
+    ]);
+  });
+
+  it("falls back after any 5xx, a timeout or a network failure", async () => {
+    for (const failure of [apiError(500), apiError(503), timeoutError(), new TypeError("fetch failed")]) {
+      const { generator, models } = fakeModels((r) => (r.model === PRIMARY ? failure : answer("OK [1].")));
+      assert.equal((await generator.generateAnswer("q", SOURCES)).model, FALLBACK, failure.message);
+      assert.deepEqual(models(), [PRIMARY, PRIMARY, PRIMARY, FALLBACK]);
+    }
+  });
+
+  it("still flags a truncated answer from the fallback", async () => {
+    const { generator } = fakeModels((r) => (r.model === PRIMARY ? apiError(503) : answer("A long answer that got cut", "MAX_TOKENS")));
+    const result = await generator.generateAnswer("q", SOURCES);
+    assert.equal(result.model, FALLBACK);
+    assert.equal(result.truncated, true);
+  });
+
+  it("reports 'unavailable' when the fallback fails too, after 2 more attempts", async () => {
+    const { generator, models } = fakeModels(() => apiError(503));
+    await assert.rejects(generator.generateAnswer("q", SOURCES), {
+      code: "unavailable",
+      message: "Answer generation service is unavailable. Try again later.",
+    });
+    assert.deepEqual(models(), [PRIMARY, PRIMARY, PRIMARY, FALLBACK, FALLBACK]);
+  });
+
+  it("is not used for a 429 (per-minute or daily) or any other 4xx", async () => {
+    const cases = [
+      { error: apiError(429, { details: [{ retryDelay: "38s" }] }), code: "rate_limited" },
+      { error: apiError(429, { details: [{ retryDelay: "3600s" }] }), code: "quota_exhausted" },
+      { error: apiError(400), code: "rejected" },
+      { error: apiError(403), code: "rejected" },
+      { error: apiError(404), code: "rejected" },
+    ];
+    for (const { error, code } of cases) {
+      const { generator, models } = fakeModels((r) => (r.model === PRIMARY ? error : answer("never")));
+      await assert.rejects(generator.generateAnswer("q", SOURCES), { code });
+      assert.ok(!models().includes(FALLBACK), code);
+    }
+  });
+
+  it("is skipped when it is the same model as the primary", async () => {
+    const time = fakeTime();
+    const model = fakeModel(() => apiError(503));
+    const generator = createGenerator({ generate: model.generate, model: PRIMARY, fallbackModel: PRIMARY, ...time });
+    await assert.rejects(generator.generateAnswer("q", SOURCES), { code: "unavailable" });
+    assert.equal(model.requests.length, 3);
+    assert.ok(!time.logs.some((line) => line.includes("falling back")));
+  });
+
+  it("keeps the primary and the fallback together within the overall deadline when calls time out", async () => {
+    const time = fakeTime();
+    const leftAtStart: number[] = []; // deadline left when each request started
+    const { generator, requests, models } = fakeModels((r) => {
+      leftAtStart.push(ANSWER_DEADLINE_MS - time.now());
+      time.advance(r.timeoutMs); // the request runs until its timeout fires
+      return timeoutError();
+    }, time);
+
+    await assert.rejects(generator.generateAnswer("q", SOURCES), { code: "unavailable" });
+
+    // Primary: 30s, then 14s (the rest of its own 45s budget). Fallback: 30s, then the 9s left.
+    assert.deepEqual(models(), [PRIMARY, PRIMARY, FALLBACK, FALLBACK]);
+    assert.deepEqual(requests.map((r) => r.timeoutMs), [30_000, 14_000, 30_000, 9_000]);
+    requests.forEach((r, i) => assert.ok(r.timeoutMs <= leftAtStart[i]!, `request ${i + 1} fits in what was left`));
+    assert.ok(time.now() <= ANSWER_DEADLINE_MS, `finished at ${time.now()} ms`);
+  });
+
+  it("skips the fallback when less than 10s of the deadline is left", async () => {
+    // Can't happen while timeouts work; this guards against a call that overruns its own.
+    const time = fakeTime();
+    const { generator, models } = fakeModels(() => {
+      time.advance(80_000);
+      return timeoutError();
+    }, time);
+
+    await assert.rejects(generator.generateAnswer("q", SOURCES), { code: "unavailable" });
+    assert.deepEqual(models(), [PRIMARY]);
+    assert.ok(
+      time.logs.includes(`[generation] ${PRIMARY} unavailable; not trying ${FALLBACK}, only 5s of the deadline left`),
+      time.logs.join("\n"),
+    );
+    assert.ok(time.now() <= ANSWER_DEADLINE_MS);
+  });
+
+  describe("while streaming", () => {
+    type Piece = RawGenerationChunk | Error;
+
+    function fakeStreams(respond: (request: GenerateRequest) => Piece[] | Error, signal?: AbortSignal) {
+      const requests: GenerateRequest[] = [];
+      const deltas: string[] = [];
+      const generateStream: GenerateStreamCall = async (request) => {
+        requests.push(request);
+        const pieces = respond(request);
+        if (pieces instanceof Error) throw pieces;
+        return (async function* () {
+          for (const piece of pieces) {
+            if (piece instanceof Error) throw piece;
+            yield piece;
+          }
+        })();
+      };
+      const generator = createGenerator({ generateStream, model: PRIMARY, fallbackModel: FALLBACK, ...fakeTime() });
+      const result = generator.streamAnswer("Q?", SOURCES, (text) => void deltas.push(text), signal);
+      return { result, deltas, models: () => requests.map((r) => r.model) };
+    }
+
+    it("streams from the fallback when the primary fails before its first text", async () => {
+      const { result, deltas, models } = fakeStreams((r) =>
+        r.model === PRIMARY ? [{ text: "" }, apiError(503)] : [{ text: "Fallback " }, { text: "answer [1]." }, { finishReason: "STOP" }],
+      );
+      const generated = await result;
+      assert.equal(generated.model, FALLBACK);
+      assert.equal(generated.text, "Fallback answer [1].");
+      assert.deepEqual(deltas, ["Fallback ", "answer [1]."], "the user saw only the fallback's text");
+      assert.deepEqual(models(), [PRIMARY, PRIMARY, PRIMARY, FALLBACK]);
+    });
+
+    it("is never used once text has reached the user", async () => {
+      const { result, deltas, models } = fakeStreams(() => [{ text: "Fresnel " }, apiError(503)]);
+      await assert.rejects(result, { code: "unavailable" });
+      assert.deepEqual(models(), [PRIMARY]);
+      assert.deepEqual(deltas, ["Fresnel "]);
+    });
+
+    it("is not used when the client disconnects", async () => {
+      const cancel = new AbortController();
+      const { result, models } = fakeStreams(() => {
+        cancel.abort();
+        return new Error("This operation was aborted");
+      }, cancel.signal);
+      await assert.rejects(result, RequestCancelledError);
+      assert.deepEqual(models(), [PRIMARY]);
+    });
   });
 });

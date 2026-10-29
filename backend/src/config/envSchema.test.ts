@@ -86,6 +86,28 @@ describe("parseEnv", () => {
   });
 });
 
+describe("GEMINI_CHAT_FALLBACK_MODEL", () => {
+  const fallbackOf = (value: string | undefined) => {
+    const result = parseEnv({ ...BASE, GEMINI_CHAT_FALLBACK_MODEL: value });
+    assert.ok("env" in result, `expected ${JSON.stringify(value)} to be accepted`);
+    return result.env.GEMINI_CHAT_FALLBACK_MODEL;
+  };
+
+  it("defaults to gemini-3.6-flash when unset, empty or blank", () => {
+    assert.equal(fallbackOf(undefined), "gemini-3.6-flash");
+    assert.equal(fallbackOf(""), "gemini-3.6-flash");
+    assert.equal(fallbackOf("   "), "gemini-3.6-flash");
+  });
+
+  it("takes an override, trimmed", () => {
+    assert.equal(fallbackOf(" gemini-3.5-flash-lite "), "gemini-3.5-flash-lite");
+  });
+
+  it("refuses to start with something that isn't a Gemini model id", () => {
+    assert.match(errorOf({ ...BASE, GEMINI_CHAT_FALLBACK_MODEL: "gpt-4o" }), /GEMINI_CHAT_FALLBACK_MODEL/);
+  });
+});
+
 describe("parseTrustProxyHops", () => {
   it("treats unset and empty as 0, without a warning", () => {
     assert.deepEqual(parseTrustProxyHops(undefined), { hops: 0 });

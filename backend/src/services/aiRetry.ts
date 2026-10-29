@@ -77,23 +77,37 @@ export type RetryOptions = {
   logTag: string;
   serviceName: string; // e.g. "Embedding", "Answer generation"
   makeError: (code: AiErrorCode, message: string, options: ErrorOptions) => AiServiceError;
+  // When set (e.g. the model id), every attempt gets one log line with its outcome:
+  // "[generation] gemini-3.5-flash-lite attempt 1/3: service error (503), waiting 1s".
+  // Without it, only retries are logged.
+  attemptLabel?: string;
 };
 
 // Runs `call`, retrying rate limits and transient failures as the policy allows.
 // An AiServiceError thrown by `call` itself (e.g. a response that failed validation) is
 // passed straight through: retrying won't fix it.
 export async function withRetry<T>(call: () => Promise<T>, options: RetryOptions, deps: RetryDeps): Promise<T> {
-  const { policy, deadline, logTag, serviceName, makeError } = options;
+  const { policy, deadline, logTag, serviceName, makeError, attemptLabel } = options;
   const service = serviceName.toLowerCase();
 
   for (let attempt = 1; ; attempt++) {
+    const logAttempt = (outcome: string) => {
+      if (attemptLabel) deps.log(`[${logTag}] ${attemptLabel} attempt ${attempt}/${policy.maxAttempts}: ${outcome}`);
+    };
+
     try {
-      return await call();
+      const result = await call();
+      logAttempt("ok");
+      return result;
     } catch (error) {
-      if (error instanceof AiServiceError) throw error;
+      if (error instanceof AiServiceError) {
+        logAttempt(error.code);
+        throw error;
+      }
 
       const failure = classify(error);
       if (failure.kind === "fatal") {
+        logAttempt(`${describeFailure(failure, error)}, giving up`);
         throw makeError("rejected", `The ${service} service rejected the request`, { cause: error });
       }
 
@@ -105,15 +119,18 @@ export async function withRetry<T>(call: () => Promise<T>, options: RetryOptions
 
       // Per-minute limits ask for seconds; a much longer wait means the daily quota is gone.
       if (failure.kind === "rate-limit" && waitMs > DAILY_QUOTA_SIGNAL_MS) {
+        logAttempt("daily quota exceeded, giving up");
         throw makeError("quota_exhausted", `${serviceName} quota exceeded. Try again later.`, { cause: error });
       }
       if (attempt >= policy.maxAttempts || waitMs > policy.maxWaitMs || deps.now() + waitMs > deadline) {
+        logAttempt(`${describeFailure(failure, error)}, giving up`);
         throw failure.kind === "rate-limit"
           ? makeError("rate_limited", `${serviceName} service is busy (rate limit). Try again in a few minutes.`, { cause: error })
           : makeError("unavailable", `${serviceName} service is unavailable. Try again later.`, { cause: error });
       }
       // Without this, work waiting out a rate limit looks stuck.
-      deps.log(`[${logTag}] ${describeFailure(failure, error)}, waiting ${seconds(waitMs)} (attempt ${attempt + 1}/${policy.maxAttempts})`);
+      if (attemptLabel) logAttempt(`${describeFailure(failure, error)}, waiting ${seconds(waitMs)}`);
+      else deps.log(`[${logTag}] ${describeFailure(failure, error)}, waiting ${seconds(waitMs)} (attempt ${attempt + 1}/${policy.maxAttempts})`);
       await deps.sleep(waitMs);
     }
   }
@@ -141,15 +158,15 @@ function retryDelayMs(error: unknown): number | undefined {
   return match ? Math.ceil(Number(match[1]) * 1000) : undefined;
 }
 
-// "rate limited" / "service error (503)" / "request failed (TypeError: fetch failed)"
+// "rate limited" / "service error (503)" / "rejected (404)" / "request failed (TypeError: fetch failed)"
 function describeFailure(failure: Failure, error: unknown): string {
   if (failure.kind === "rate-limit") return "rate limited";
   const status = (error as { status?: unknown })?.status;
-  if (typeof status === "number") return `service error (${status})`;
+  if (typeof status === "number") return failure.kind === "fatal" ? `rejected (${status})` : `service error (${status})`;
   const name = error instanceof Error ? error.name : "Error";
   const message = error instanceof Error ? error.message : String(error);
   return `request failed (${name}: ${message.slice(0, 80)})`;
 }
 
 // 38000 → "38s", 1500 → "1.5s"
-const seconds = (ms: number) => `${Number((ms / 1000).toFixed(1))}s`;
+export const seconds = (ms: number) => `${Number((ms / 1000).toFixed(1))}s`;

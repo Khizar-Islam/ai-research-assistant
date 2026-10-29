@@ -25,13 +25,24 @@ const EnvSchema = z
 
     // Model that writes answers (Step 5). Chosen by a live comparison: same answer quality
     // as gemini-3.5-flash in testing, ~10x faster (~0.9 s). Gemini models get retired, so
-    // this is config, not code: switch to "gemini-3.5-flash" here if flash-lite is ever
-    // unavailable or struggles with harder questions.
+    // this is config, not code. (gemini-3.5-flash itself is now auto-routed to 3.6-flash.)
     GEMINI_CHAT_MODEL: z
       .string()
       .trim()
       .regex(/^gemini-[\w.-]+$/, 'must be a Gemini model id like "gemini-3.5-flash-lite"')
       .default("gemini-3.5-flash-lite"),
+
+    // Tried automatically when GEMINI_CHAT_MODEL stays unavailable (5xx, timeout) before
+    // any answer text has reached the user; see services/generation.ts. Unset or blank →
+    // the default. Setting it to the same id as GEMINI_CHAT_MODEL turns the fallback off.
+    GEMINI_CHAT_FALLBACK_MODEL: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z
+        .string()
+        .trim()
+        .regex(/^gemini-[\w.-]+$/, 'must be a Gemini model id like "gemini-3.6-flash"')
+        .default("gemini-3.6-flash"),
+    ),
 
     // Verifies the short-lived API tokens the Next.js app signs for signed-in users (see
     // middleware/requireAuth.ts). Shared with web/.env.local. 32+ characters: HS256 is only
